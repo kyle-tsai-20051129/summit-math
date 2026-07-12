@@ -1,22 +1,26 @@
 "use client";
 
-import { Mic, MicOff, PhoneOff, Video, VideoOff } from "lucide-react";
+import { Mic, MicOff, MonitorUp, PhoneOff, Video, VideoOff } from "lucide-react";
 
 type CallControlsProps = {
   isMicEnabled: boolean;
   isCameraEnabled: boolean;
+  isScreenSharing: boolean;
   isDisabled: boolean;
   onToggleMicrophone: () => void;
   onToggleCamera: () => void;
+  onToggleScreenShare: () => void;
   onLeave: () => void;
 };
 
 export function CallControls({
   isMicEnabled,
   isCameraEnabled,
+  isScreenSharing,
   isDisabled,
   onToggleMicrophone,
   onToggleCamera,
+  onToggleScreenShare,
   onLeave,
 }: CallControlsProps) {
   return (
@@ -52,6 +56,20 @@ export function CallControls({
           {isCameraEnabled ? "Turn camera off" : "Turn camera on"}
         </span>
         <span aria-hidden="true">Video</span>
+      </button>
+      <button
+        type="button"
+        className={`control-button ${isScreenSharing ? "control-active" : ""}`}
+        onClick={onToggleScreenShare}
+        disabled={isDisabled}
+        title={isScreenSharing ? "Stop sharing screen" : "Share screen"}
+        aria-pressed={isScreenSharing}
+      >
+        <MonitorUp aria-hidden="true" />
+        <span className="sr-only">
+          {isScreenSharing ? "Stop sharing screen" : "Share screen"}
+        </span>
+        <span aria-hidden="true">{isScreenSharing ? "Stop share" : "Share"}</span>
       </button>
       <button type="button" className="leave-button" onClick={onLeave}>
         <PhoneOff aria-hidden="true" />

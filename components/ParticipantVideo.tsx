@@ -8,6 +8,7 @@ type ParticipantVideoProps = {
   label: string;
   isLocal: boolean;
   isMuted?: boolean;
+  videoSource?: Track.Source.Camera | Track.Source.ScreenShare;
   audioOutputDeviceId?: string;
   className?: string;
   placeholder: ReactNode;
@@ -18,13 +19,14 @@ export function ParticipantVideo({
   label,
   isLocal,
   isMuted = false,
+  videoSource = Track.Source.Camera,
   audioOutputDeviceId = "",
   className = "",
   placeholder,
 }: ParticipantVideoProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const videoPublication = participant?.getTrackPublication(Track.Source.Camera);
+  const videoPublication = participant?.getTrackPublication(videoSource);
   const audioPublication = participant?.getTrackPublication(Track.Source.Microphone);
   const videoTrack = videoPublication?.track;
   const audioTrack = audioPublication?.track;

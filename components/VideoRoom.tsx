@@ -10,6 +10,7 @@ import {
 } from "@/components/ConnectionStatus";
 import { JoinMediaSettings, JoinPreview } from "@/components/JoinPreview";
 import { ParticipantVideo } from "@/components/ParticipantVideo";
+import { ScreenShareStage } from "@/components/ScreenShareStage";
 import { useVideoRoom } from "@/hooks/useVideoRoom";
 import {
   displayNameStorageKey,
@@ -167,6 +168,7 @@ function VideoRoomCall({
     })),
   ];
   const visibleCount = callParticipants.length;
+  const hasActiveScreenShare = Boolean(videoRoom.activeScreenShare);
 
   function leaveRoom() {
     videoRoom.disconnect();
@@ -247,61 +249,99 @@ function VideoRoomCall({
         </div>
       ) : null}
 
-      <section
-        className={`call-stage participant-grid participant-grid-${visibleCount || 1}`}
-        aria-label="Video call"
-      >
-        {visibleCount > 0 ? (
-          callParticipants.map((callParticipant) => (
+      {hasActiveScreenShare && videoRoom.activeScreenShare ? (
+        <section className="call-stage screen-share-layout" aria-label="Video call">
+          <ScreenShareStage
+            participant={videoRoom.activeScreenShare.participant}
+            label={videoRoom.activeScreenShare.label}
+            isLocal={videoRoom.activeScreenShare.isLocal}
+          />
+          <div
+            className={`screen-share-participant-strip strip-count-${visibleCount || 1}`}
+            aria-label="Participants"
+          >
+            {callParticipants.map((callParticipant) => (
+              <ParticipantVideo
+                key={callParticipant.id}
+                participant={callParticipant.participant}
+                label={callParticipant.label}
+                isLocal={callParticipant.isLocal}
+                isMuted={callParticipant.isLocal}
+                audioOutputDeviceId={initialMediaSettings.speakerDeviceId}
+                className="compact-call-tile"
+                placeholder={
+                  <span className="participant-avatar compact-avatar">
+                    {callParticipant.placeholderLabel}
+                  </span>
+                }
+              />
+            ))}
+          </div>
+          {videoRoom.participantCount >= 4 ? (
+            <p className="room-limit-message">Room full: showing 4 participants</p>
+          ) : null}
+        </section>
+      ) : (
+        <section
+          className={`call-stage participant-grid participant-grid-${visibleCount || 1}`}
+          aria-label="Video call"
+        >
+          {visibleCount > 0 ? (
+            callParticipants.map((callParticipant) => (
+              <ParticipantVideo
+                key={callParticipant.id}
+                participant={callParticipant.participant}
+                label={callParticipant.label}
+                isLocal={callParticipant.isLocal}
+                isMuted={callParticipant.isLocal}
+                audioOutputDeviceId={initialMediaSettings.speakerDeviceId}
+                className="equal-call-tile"
+                placeholder={
+                  <span className="participant-avatar">
+                    {callParticipant.placeholderLabel}
+                  </span>
+                }
+              />
+            ))
+          ) : (
             <ParticipantVideo
-              key={callParticipant.id}
-              participant={callParticipant.participant}
-              label={callParticipant.label}
-              isLocal={callParticipant.isLocal}
-              isMuted={callParticipant.isLocal}
+              participant={videoRoom.localParticipant}
+              label="You"
+              isLocal
+              isMuted
               audioOutputDeviceId={initialMediaSettings.speakerDeviceId}
-              className="equal-call-tile"
+              className="main-call-tile"
               placeholder={
-                <span className="participant-avatar">
-                  {callParticipant.placeholderLabel}
-                </span>
+                videoRoom.isConnecting ? (
+                  <span className="waiting-inline">
+                    <Loader2 aria-hidden="true" size={20} />
+                    Connecting...
+                  </span>
+                ) : (
+                  <span className="participant-avatar">Y</span>
+                )
               }
             />
-          ))
-        ) : (
-          <ParticipantVideo
-            participant={videoRoom.localParticipant}
-            label="You"
-            isLocal
-            isMuted
-            audioOutputDeviceId={initialMediaSettings.speakerDeviceId}
-            className="main-call-tile"
-            placeholder={
-              videoRoom.isConnecting ? (
-                <span className="waiting-inline">
-                  <Loader2 aria-hidden="true" size={20} />
-                  Connecting...
-                </span>
-              ) : (
-                <span className="participant-avatar">Y</span>
-              )
-            }
-          />
-        )}
-        {videoRoom.remoteParticipants.length === 0 && !videoRoom.isConnecting ? (
-          <p className="waiting-message">Waiting for another participant to join...</p>
-        ) : null}
-        {videoRoom.participantCount >= 4 ? (
-          <p className="room-limit-message">Room full: showing 4 participants</p>
-        ) : null}
-      </section>
+          )}
+          {videoRoom.remoteParticipants.length === 0 && !videoRoom.isConnecting ? (
+            <p className="waiting-message">
+              Waiting for another participant to join...
+            </p>
+          ) : null}
+          {videoRoom.participantCount >= 4 ? (
+            <p className="room-limit-message">Room full: showing 4 participants</p>
+          ) : null}
+        </section>
+      )}
 
       <CallControls
         isCameraEnabled={videoRoom.isCameraEnabled}
         isMicEnabled={videoRoom.isMicEnabled}
+        isScreenSharing={videoRoom.isScreenSharing}
         isDisabled={videoRoom.isConnecting}
         onToggleCamera={videoRoom.toggleCamera}
         onToggleMicrophone={videoRoom.toggleMicrophone}
+        onToggleScreenShare={videoRoom.toggleScreenShare}
         onLeave={leaveRoom}
       />
     </main>

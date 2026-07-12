@@ -8,7 +8,9 @@ import {
   RemoteParticipant,
   Room,
   RoomEvent,
+  ScreenSharePresets,
   Track,
+  TrackPublication,
 } from "livekit-client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -75,6 +77,12 @@ export type ParticipantNotice = {
   message: string;
 };
 
+export type ActiveScreenShare = {
+  participant: Participant;
+  label: string;
+  isLocal: boolean;
+};
+
 function getParticipantNoticeName(participant: Participant) {
   return participant.name || "Participant";
 }
@@ -112,7 +120,7 @@ function toVideoRoomError(error: unknown, fallback: string): VideoRoomError {
 
 function getEnabledState(
   participant: Participant,
-  source: Track.Source.Camera | Track.Source.Microphone,
+  source: Track.Source,
 ) {
   const publication = participant.getTrackPublication(source);
 
@@ -125,6 +133,10 @@ function getEnabledState(
   }
 
   return !publication.isMuted;
+}
+
+function isScreenSharePublication(publication: TrackPublication) {
+  return publication.source === Track.Source.ScreenShare;
 }
 
 type InitialMediaSettings = {
@@ -143,6 +155,7 @@ export function useVideoRoom(
   const roomRef = useRef<Room | null>(null);
   const connectionIdRef = useRef(0);
   const noticeTimeoutsRef = useRef<Map<string, number>>(new Map());
+  const screenTrackEndCleanupRef = useRef<(() => void) | null>(null);
   const [connectionRevision, setConnectionRevision] = useState(0);
   const [room, setRoom] = useState<Room | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>(
@@ -161,6 +174,8 @@ export function useVideoRoom(
   const [isCameraEnabled, setIsCameraEnabled] = useState(
     initialMediaSettings.isCameraEnabled,
   );
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [screenShareOwners, setScreenShareOwners] = useState<string[]>([]);
   const [isConnecting, setIsConnecting] = useState(true);
   const [participantNotices, setParticipantNotices] = useState<
     ParticipantNotice[]
@@ -169,6 +184,33 @@ export function useVideoRoom(
   const localParticipant = room?.localParticipant ?? null;
   const remoteParticipant = remoteParticipants[0] ?? null;
   const visibleRemoteParticipants = remoteParticipants.slice(0, 3);
+  const allParticipants = [
+    ...(localParticipant ? [localParticipant] : []),
+    ...visibleRemoteParticipants,
+  ];
+  const activeScreenShare = [...screenShareOwners]
+    .reverse()
+    .reduce<Participant | null>((selectedParticipant, participantIdentity) => {
+      if (selectedParticipant) {
+        return selectedParticipant;
+      }
+
+      const matchingParticipant = allParticipants.find(
+        (participant) => participant.identity === participantIdentity,
+      );
+
+      return matchingParticipant &&
+        getEnabledState(matchingParticipant, Track.Source.ScreenShare)
+        ? matchingParticipant
+        : null;
+    }, null);
+  const activeScreenShareDetails: ActiveScreenShare | null = activeScreenShare
+    ? {
+        participant: activeScreenShare,
+        label: `${getParticipantNoticeName(activeScreenShare)} is sharing`,
+        isLocal: activeScreenShare.identity === localParticipant?.identity,
+      }
+    : null;
 
   const updateParticipants = useCallback(() => {
     const currentRoom = roomRef.current;
@@ -182,12 +224,51 @@ export function useVideoRoom(
 
     setConnectionState(currentRoom.state);
     setConnectionQuality(currentRoom.localParticipant.connectionQuality);
-    setRemoteParticipants(Array.from(currentRoom.remoteParticipants.values()));
+    const nextRemoteParticipants = Array.from(
+      currentRoom.remoteParticipants.values(),
+    );
+
+    setRemoteParticipants(nextRemoteParticipants);
     setIsMicEnabled(
       getEnabledState(currentRoom.localParticipant, Track.Source.Microphone),
     );
     setIsCameraEnabled(
       getEnabledState(currentRoom.localParticipant, Track.Source.Camera),
+    );
+    setIsScreenSharing(
+      getEnabledState(currentRoom.localParticipant, Track.Source.ScreenShare),
+    );
+    setScreenShareOwners((currentOwners) => {
+      const activeOwnerIds = [
+        currentRoom.localParticipant,
+        ...nextRemoteParticipants,
+      ]
+        .filter((participant) =>
+          getEnabledState(participant, Track.Source.ScreenShare),
+        )
+        .map((participant) => participant.identity);
+
+      return [
+        ...currentOwners.filter((identity) =>
+          activeOwnerIds.includes(identity),
+        ),
+        ...activeOwnerIds.filter(
+          (identity) => !currentOwners.includes(identity),
+        ),
+      ];
+    });
+  }, []);
+
+  const rememberScreenShareOwner = useCallback((participant: Participant) => {
+    setScreenShareOwners((currentOwners) => [
+      ...currentOwners.filter((identity) => identity !== participant.identity),
+      participant.identity,
+    ]);
+  }, []);
+
+  const forgetScreenShareOwner = useCallback((participant: Participant) => {
+    setScreenShareOwners((currentOwners) =>
+      currentOwners.filter((identity) => identity !== participant.identity),
     );
   }, []);
 
@@ -235,6 +316,9 @@ export function useVideoRoom(
   const disconnect = useCallback(() => {
     const currentRoom = roomRef.current;
 
+    screenTrackEndCleanupRef.current?.();
+    screenTrackEndCleanupRef.current = null;
+
     if (currentRoom) {
       currentRoom.disconnect(true);
     }
@@ -244,6 +328,8 @@ export function useVideoRoom(
     setRemoteParticipants([]);
     setConnectionState(ConnectionState.Disconnected);
     setConnectionQuality(ConnectionQuality.Unknown);
+    setIsScreenSharing(false);
+    setScreenShareOwners([]);
   }, []);
 
   useEffect(() => {
@@ -334,6 +420,52 @@ export function useVideoRoom(
 
       if (hasCompletedInitialSync) {
         addParticipantNotice(`${getParticipantNoticeName(participant)} left`);
+      }
+
+      syncRoomStateSoon();
+    };
+
+    const handleScreenShareStarted = (
+      publication: TrackPublication,
+      participant: Participant,
+    ) => {
+      if (!isCurrentConnection()) {
+        return;
+      }
+
+      if (!isScreenSharePublication(publication)) {
+        syncRoomStateSoon();
+        return;
+      }
+
+      rememberScreenShareOwner(participant);
+      if (hasCompletedInitialSync) {
+        addParticipantNotice(
+          `${getParticipantNoticeName(participant)} started sharing`,
+        );
+      }
+
+      syncRoomStateSoon();
+    };
+
+    const handleScreenShareStopped = (
+      publication: TrackPublication,
+      participant: Participant,
+    ) => {
+      if (!isCurrentConnection()) {
+        return;
+      }
+
+      if (!isScreenSharePublication(publication)) {
+        syncRoomStateSoon();
+        return;
+      }
+
+      forgetScreenShareOwner(participant);
+      if (hasCompletedInitialSync) {
+        addParticipantNotice(
+          `${getParticipantNoticeName(participant)} stopped sharing`,
+        );
       }
 
       syncRoomStateSoon();
@@ -434,14 +566,14 @@ export function useVideoRoom(
           .on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected)
           .on(RoomEvent.ParticipantActive, syncRoomStateSoon)
           .on(RoomEvent.ParticipantNameChanged, syncRoomStateSoon)
-          .on(RoomEvent.TrackPublished, syncRoomStateSoon)
-          .on(RoomEvent.TrackUnpublished, syncRoomStateSoon)
+          .on(RoomEvent.TrackPublished, handleScreenShareStarted)
+          .on(RoomEvent.TrackUnpublished, handleScreenShareStopped)
           .on(RoomEvent.TrackSubscribed, syncRoomStateSoon)
           .on(RoomEvent.TrackUnsubscribed, syncRoomStateSoon)
-          .on(RoomEvent.TrackMuted, syncRoomStateSoon)
-          .on(RoomEvent.TrackUnmuted, syncRoomStateSoon)
-          .on(RoomEvent.LocalTrackPublished, syncRoomStateSoon)
-          .on(RoomEvent.LocalTrackUnpublished, syncRoomStateSoon)
+          .on(RoomEvent.TrackMuted, handleScreenShareStopped)
+          .on(RoomEvent.TrackUnmuted, handleScreenShareStarted)
+          .on(RoomEvent.LocalTrackPublished, handleScreenShareStarted)
+          .on(RoomEvent.LocalTrackUnpublished, handleScreenShareStopped)
           .on(RoomEvent.Disconnected, handleDisconnected);
 
         await nextRoom.connect(tokenData.url, tokenData.token);
@@ -518,6 +650,8 @@ export function useVideoRoom(
       if (roomRef.current === nextRoom) {
         roomRef.current = null;
       }
+      screenTrackEndCleanupRef.current?.();
+      screenTrackEndCleanupRef.current = null;
     };
   }, [
     roomName,
@@ -529,6 +663,9 @@ export function useVideoRoom(
     initialMediaSettings.speakerDeviceId,
     connectionRevision,
     updateParticipants,
+    addParticipantNotice,
+    forgetScreenShareOwner,
+    rememberScreenShareOwner,
   ]);
 
   const toggleMicrophone = useCallback(async () => {
@@ -573,18 +710,124 @@ export function useVideoRoom(
     }
   }, [isCameraEnabled, updateParticipants]);
 
+  const stopScreenShare = useCallback(async () => {
+    const currentRoom = roomRef.current;
+
+    screenTrackEndCleanupRef.current?.();
+    screenTrackEndCleanupRef.current = null;
+
+    if (!currentRoom) {
+      setIsScreenSharing(false);
+      return;
+    }
+
+    try {
+      await currentRoom.localParticipant.setScreenShareEnabled(false);
+      forgetScreenShareOwner(currentRoom.localParticipant);
+      setIsScreenSharing(false);
+      updateParticipants();
+    } catch {
+      addParticipantNotice("Unable to stop screen sharing.");
+    }
+  }, [addParticipantNotice, forgetScreenShareOwner, updateParticipants]);
+
+  const toggleScreenShare = useCallback(async () => {
+    const currentRoom = roomRef.current;
+
+    if (!currentRoom) {
+      return;
+    }
+
+    if (isScreenSharing) {
+      await stopScreenShare();
+      return;
+    }
+
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices ||
+      !("getDisplayMedia" in navigator.mediaDevices)
+    ) {
+      addParticipantNotice("This browser does not support screen sharing.");
+      return;
+    }
+
+    try {
+      const publication =
+        await currentRoom.localParticipant.setScreenShareEnabled(
+          true,
+          {
+            audio: false,
+            contentHint: "detail",
+            resolution: ScreenSharePresets.original.resolution,
+          },
+          {
+            screenShareEncoding: ScreenSharePresets.original.encoding,
+          },
+        );
+
+      if (!publication) {
+        addParticipantNotice("Unable to start screen sharing. Please try again.");
+        return;
+      }
+
+      screenTrackEndCleanupRef.current?.();
+      const nativeTrack = publication.track?.mediaStreamTrack;
+
+      if (nativeTrack) {
+        const handleNativeTrackEnded = () => {
+          void stopScreenShare();
+        };
+
+        nativeTrack.addEventListener("ended", handleNativeTrackEnded, {
+          once: true,
+        });
+        screenTrackEndCleanupRef.current = () => {
+          nativeTrack.removeEventListener("ended", handleNativeTrackEnded);
+        };
+      }
+
+      rememberScreenShareOwner(currentRoom.localParticipant);
+      setIsScreenSharing(true);
+      updateParticipants();
+    } catch (caughtError) {
+      const message =
+        caughtError instanceof Error ? caughtError.message.toLowerCase() : "";
+
+      if (
+        message.includes("permission") ||
+        message.includes("denied") ||
+        message.includes("cancel") ||
+        message.includes("notallowed")
+      ) {
+        addParticipantNotice("Screen sharing was cancelled or blocked.");
+        return;
+      }
+
+      addParticipantNotice("Unable to start screen sharing. Please try again.");
+    }
+  }, [
+    addParticipantNotice,
+    isScreenSharing,
+    rememberScreenShareOwner,
+    stopScreenShare,
+    updateParticipants,
+  ]);
+
   return useMemo(
     () => ({
       room,
       localParticipant,
       remoteParticipant,
       remoteParticipants: visibleRemoteParticipants,
+      activeScreenShare: activeScreenShareDetails,
       connectionState,
       connectionQuality,
       error,
       isConnecting,
       isMicEnabled,
       isCameraEnabled,
+      isScreenSharing,
       hasRemoteParticipant: remoteParticipants.length > 0,
       participantNotices,
       participantCount:
@@ -592,6 +835,8 @@ export function useVideoRoom(
       dismissParticipantNotice,
       toggleMicrophone,
       toggleCamera,
+      toggleScreenShare,
+      stopScreenShare,
       disconnect,
     }),
     [
@@ -599,17 +844,21 @@ export function useVideoRoom(
       localParticipant,
       remoteParticipant,
       visibleRemoteParticipants,
+      activeScreenShareDetails,
       connectionState,
       connectionQuality,
       error,
       isConnecting,
       isMicEnabled,
       isCameraEnabled,
+      isScreenSharing,
       remoteParticipants.length,
       participantNotices,
       dismissParticipantNotice,
       toggleMicrophone,
       toggleCamera,
+      toggleScreenShare,
+      stopScreenShare,
       disconnect,
     ],
   );
