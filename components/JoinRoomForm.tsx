@@ -9,15 +9,19 @@ import {
 } from "@/lib/displayName";
 import { isValidRoomName, normalizeRoomName } from "@/lib/room";
 import {
+  getRoomAccessModeStorageKey,
   getRoomPasswordStorageKey,
   isValidRoomPassword,
   normalizeRoomPassword,
+  RoomAccessMode,
 } from "@/lib/roomAccess";
 import { copyText, getRoomUrl } from "@/lib/share";
 
 export function JoinRoomForm() {
+  const [accessMode, setAccessMode] = useState<RoomAccessMode>("join");
   const [roomName, setRoomName] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [isPasswordProtected, setIsPasswordProtected] = useState(false);
   const [roomPassword, setRoomPassword] = useState("");
   const [error, setError] = useState("");
   const [copyStatus, setCopyStatus] = useState("Copy room link");
@@ -36,9 +40,14 @@ export function JoinRoomForm() {
     }
   }, []);
 
-  function joinRoom(nextRoomName: string) {
+  function enterRoom(
+    nextRoomName: string,
+    nextAccessMode: RoomAccessMode = accessMode,
+  ) {
     const normalized = normalizeRoomName(nextRoomName);
     const normalizedPassword = normalizeRoomPassword(roomPassword);
+    const shouldUsePassword =
+      nextAccessMode === "join" || isPasswordProtected;
 
     if (!isValidDisplayName(normalizedDisplayName)) {
       setError("Enter a display name between 1 and 40 characters.");
@@ -50,13 +59,23 @@ export function JoinRoomForm() {
       return;
     }
 
-    if (!isValidRoomPassword(normalizedPassword)) {
+    if (nextAccessMode === "create" && isPasswordProtected && !normalizedPassword) {
+      setError("Enter a password or turn password protection off.");
+      return;
+    }
+
+    if (shouldUsePassword && !isValidRoomPassword(normalizedPassword)) {
       setError("Room passwords must be 128 characters or fewer.");
       return;
     }
 
     window.localStorage.setItem(displayNameStorageKey, normalizedDisplayName);
-    if (normalizedPassword) {
+    window.sessionStorage.setItem(
+      getRoomAccessModeStorageKey(normalized),
+      nextAccessMode,
+    );
+
+    if (shouldUsePassword && normalizedPassword) {
       window.sessionStorage.setItem(
         getRoomPasswordStorageKey(normalized),
         normalizedPassword,
@@ -70,7 +89,7 @@ export function JoinRoomForm() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    joinRoom(normalizedRoomName);
+    enterRoom(normalizedRoomName);
   }
 
   async function copyRoomLink() {
@@ -86,6 +105,28 @@ export function JoinRoomForm() {
 
   return (
     <form className="join-panel" onSubmit={handleSubmit}>
+      <div className="room-access-tabs" aria-label="Room action">
+        <button
+          type="button"
+          className={accessMode === "join" ? "active" : ""}
+          onClick={() => {
+            setAccessMode("join");
+            setError("");
+          }}
+        >
+          Join room
+        </button>
+        <button
+          type="button"
+          className={accessMode === "create" ? "active" : ""}
+          onClick={() => {
+            setAccessMode("create");
+            setError("");
+          }}
+        >
+          Create room
+        </button>
+      </div>
       <label htmlFor="display-name">Display name</label>
       <input
         id="display-name"
@@ -113,27 +154,53 @@ export function JoinRoomForm() {
           setCopyStatus("Copy room link");
         }}
       />
-      <label htmlFor="room-password">Room password (optional)</label>
-      <input
-        id="room-password"
-        name="roomPassword"
-        autoComplete="off"
-        type="password"
-        placeholder="Leave blank for a public room"
-        value={roomPassword}
-        onChange={(event) => {
-          setRoomPassword(event.target.value);
-          setError("");
-        }}
-      />
+      {accessMode === "create" ? (
+        <label className="password-toggle">
+          <input
+            checked={isPasswordProtected}
+            type="checkbox"
+            onChange={(event) => {
+              setIsPasswordProtected(event.target.checked);
+              setError("");
+            }}
+          />
+          Require a room password
+        </label>
+      ) : null}
+      {accessMode === "join" || isPasswordProtected ? (
+        <>
+          <label htmlFor="room-password">
+            {accessMode === "join" ? "Room password if required" : "Room password"}
+          </label>
+          <input
+            id="room-password"
+            name="roomPassword"
+            autoComplete="off"
+            type="password"
+            placeholder={
+              accessMode === "join"
+                ? "Leave blank for public rooms"
+                : "Create a room password"
+            }
+            value={roomPassword}
+            onChange={(event) => {
+              setRoomPassword(event.target.value);
+              setError("");
+            }}
+          />
+        </>
+      ) : null}
       {error ? <p className="form-error">{error}</p> : null}
       {isValidRoomName(normalizedRoomName) ? (
         <p className="room-link-preview">
           Room code: <strong>{normalizedRoomName}</strong>
+          {accessMode === "create" && isPasswordProtected ? (
+            <span> Password protected</span>
+          ) : null}
         </p>
       ) : null}
       <button type="submit" disabled={!normalizedRoomName || !normalizedDisplayName}>
-        Join Room
+        {accessMode === "join" ? "Join Room" : "Create Room"}
       </button>
       <button
         className="secondary-button copy-room-button"
@@ -147,7 +214,7 @@ export function JoinRoomForm() {
       <button
         className="secondary-button"
         type="button"
-        onClick={() => joinRoom(`demo-${createDemoRoomSuffix()}`)}
+        onClick={() => enterRoom(`demo-${createDemoRoomSuffix()}`, "create")}
       >
         Create Demo Room
       </button>

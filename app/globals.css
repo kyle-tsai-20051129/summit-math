@@ -140,6 +140,46 @@ a {
   font: inherit;
 }
 
+.room-access-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-strong);
+}
+
+.join-panel .room-access-tabs button {
+  min-height: 38px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.join-panel .room-access-tabs button:hover,
+.join-panel .room-access-tabs button.active {
+  background: var(--surface);
+  color: var(--foreground);
+}
+
+.password-toggle {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfdfc;
+}
+
+.join-panel .password-toggle input {
+  width: 18px;
+  min-height: 18px;
+  padding: 0;
+  accent-color: var(--primary);
+}
+
 .join-panel button,
 .room-message button,
 .icon-text-button {

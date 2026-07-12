@@ -13,6 +13,7 @@ import {
   TrackPublication,
 } from "livekit-client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { RoomAccessMode } from "@/lib/roomAccess";
 
 const chatTopic = "summit-video-chat";
 const maxChatMessageLength = 500;
@@ -65,6 +66,7 @@ type MediaErrorKind =
   | "camera"
   | "microphone"
   | "connect"
+  | "room-exists"
   | "room-full"
   | "room-password"
   | "unsupported"
@@ -141,6 +143,10 @@ function toVideoRoomError(error: unknown, fallback: string): VideoRoomError {
     lowerMessage.includes("up to 4 people")
   ) {
     return { kind: "room-full", message };
+  }
+
+  if (lowerMessage.includes("room already exists")) {
+    return { kind: "room-exists", message };
   }
 
   if (
@@ -220,6 +226,7 @@ export function useVideoRoom(
   displayName: string,
   initialMediaSettings: InitialMediaSettings,
   roomPassword: string,
+  roomAccessMode: RoomAccessMode,
 ) {
   const roomRef = useRef<Room | null>(null);
   const connectionIdRef = useRef(0);
@@ -648,7 +655,12 @@ export function useVideoRoom(
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ roomName, displayName, roomPassword }),
+          body: JSON.stringify({
+            roomName,
+            displayName,
+            roomPassword,
+            roomAccessMode,
+          }),
         });
         const tokenData = await readTokenResponse(tokenResponse);
 
@@ -770,6 +782,7 @@ export function useVideoRoom(
     initialMediaSettings.cameraDeviceId,
     initialMediaSettings.speakerDeviceId,
     roomPassword,
+    roomAccessMode,
     connectionRevision,
     updateParticipants,
     addParticipantNotice,

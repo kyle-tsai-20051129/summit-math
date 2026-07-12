@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { isValidDisplayName, normalizeDisplayName } from "@/lib/displayName";
 import { isValidRoomName } from "@/lib/room";
 import {
+  isRoomAccessMode,
   isValidRoomPassword,
   normalizeRoomPassword,
 } from "@/lib/roomAccess";
@@ -110,6 +111,14 @@ export async function POST(request: Request) {
     typeof body.roomPassword === "string"
       ? normalizeRoomPassword(body.roomPassword)
       : "";
+  const roomAccessMode =
+    typeof body === "object" &&
+    body !== null &&
+    "roomAccessMode" in body &&
+    typeof body.roomAccessMode === "string" &&
+    isRoomAccessMode(body.roomAccessMode)
+      ? body.roomAccessMode
+      : "join";
 
   if (!isValidRoomName(roomName)) {
     return NextResponse.json(
@@ -145,6 +154,16 @@ export async function POST(request: Request) {
     const existingRoom = rooms[0];
 
     if (existingRoom) {
+      if (roomAccessMode === "create") {
+        return NextResponse.json(
+          {
+            error:
+              "Room already exists. Choose Join room or create a different room code.",
+          },
+          { status: 409 },
+        );
+      }
+
       const metadata = readRoomAccessMetadata(existingRoom.metadata);
 
       if (metadata.access?.passwordHash && !roomPassword) {

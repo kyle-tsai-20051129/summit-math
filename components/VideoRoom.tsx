@@ -21,9 +21,12 @@ import {
 } from "@/lib/displayName";
 import { isValidRoomName, normalizeRoomName } from "@/lib/room";
 import {
+  getRoomAccessModeStorageKey,
   getRoomPasswordStorageKey,
+  isRoomAccessMode,
   isValidRoomPassword,
   normalizeRoomPassword,
+  RoomAccessMode,
 } from "@/lib/roomAccess";
 import { copyText, getRoomUrl } from "@/lib/share";
 
@@ -42,6 +45,8 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
     null,
   );
   const [roomPassword, setRoomPassword] = useState("");
+  const [roomAccessMode, setRoomAccessMode] =
+    useState<RoomAccessMode>("join");
 
   useEffect(() => {
     const storedDisplayName = window.localStorage.getItem(displayNameStorageKey);
@@ -61,9 +66,17 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
     const storedRoomPassword = window.sessionStorage.getItem(
       getRoomPasswordStorageKey(roomName),
     );
+    const storedAccessMode = window.sessionStorage.getItem(
+      getRoomAccessModeStorageKey(roomName),
+    );
 
     if (storedRoomPassword && isValidRoomPassword(storedRoomPassword)) {
       setRoomPassword(normalizeRoomPassword(storedRoomPassword));
+    }
+
+    if (storedAccessMode && isRoomAccessMode(storedAccessMode)) {
+      setRoomAccessMode(storedAccessMode);
+      window.sessionStorage.removeItem(getRoomAccessModeStorageKey(roomName));
     }
   }, [isValid, roomName]);
 
@@ -143,6 +156,7 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
       displayName={displayName}
       initialMediaSettings={joinSettings}
       roomPassword={roomPassword}
+      roomAccessMode={roomAccessMode}
       onRoomPasswordChange={setRoomPassword}
     />
   );
@@ -153,6 +167,7 @@ type VideoRoomCallProps = {
   displayName: string;
   initialMediaSettings: JoinMediaSettings;
   roomPassword: string;
+  roomAccessMode: RoomAccessMode;
   onRoomPasswordChange: (roomPassword: string) => void;
 };
 
@@ -161,6 +176,7 @@ function VideoRoomCall({
   displayName,
   initialMediaSettings,
   roomPassword,
+  roomAccessMode,
   onRoomPasswordChange,
 }: VideoRoomCallProps) {
   const router = useRouter();
@@ -169,6 +185,7 @@ function VideoRoomCall({
     displayName,
     initialMediaSettings,
     roomPassword,
+    roomAccessMode,
   );
   const [copyStatus, setCopyStatus] = useState("Copy link");
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -287,6 +304,24 @@ function VideoRoomCall({
         }}
         onReturnHome={leaveRoom}
       />
+    );
+  }
+
+  if (videoRoom.error?.kind === "room-exists") {
+    return (
+      <main className="call-page call-access-page">
+        <section className="room-full-screen" aria-labelledby="room-exists-title">
+          <p className="room-full-eyebrow">Room code: {roomName}</p>
+          <h1 id="room-exists-title">Room already exists</h1>
+          <p>
+            A room with this code is already active. Return home and choose
+            Join room, or create a different room code.
+          </p>
+          <button type="button" onClick={leaveRoom}>
+            Return home
+          </button>
+        </section>
+      </main>
     );
   }
 
