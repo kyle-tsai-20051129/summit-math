@@ -20,6 +20,11 @@ import {
   normalizeDisplayName,
 } from "@/lib/displayName";
 import { isValidRoomName, normalizeRoomName } from "@/lib/room";
+import {
+  getRoomPasswordStorageKey,
+  isValidRoomPassword,
+  normalizeRoomPassword,
+} from "@/lib/roomAccess";
 import { copyText, getRoomUrl } from "@/lib/share";
 
 type VideoRoomProps = {
@@ -36,6 +41,7 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
   const [joinSettings, setJoinSettings] = useState<JoinMediaSettings | null>(
     null,
   );
+  const [roomPassword, setRoomPassword] = useState("");
 
   useEffect(() => {
     const storedDisplayName = window.localStorage.getItem(displayNameStorageKey);
@@ -46,6 +52,20 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
       setNameInput(normalizedDisplayName);
     }
   }, []);
+
+  useEffect(() => {
+    if (!isValid) {
+      return;
+    }
+
+    const storedRoomPassword = window.sessionStorage.getItem(
+      getRoomPasswordStorageKey(roomName),
+    );
+
+    if (storedRoomPassword && isValidRoomPassword(storedRoomPassword)) {
+      setRoomPassword(normalizeRoomPassword(storedRoomPassword));
+    }
+  }, [isValid, roomName]);
 
   function saveDisplayName(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -122,6 +142,8 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
       roomName={roomName}
       displayName={displayName}
       initialMediaSettings={joinSettings}
+      roomPassword={roomPassword}
+      onRoomPasswordChange={setRoomPassword}
     />
   );
 }
@@ -130,15 +152,24 @@ type VideoRoomCallProps = {
   roomName: string;
   displayName: string;
   initialMediaSettings: JoinMediaSettings;
+  roomPassword: string;
+  onRoomPasswordChange: (roomPassword: string) => void;
 };
 
 function VideoRoomCall({
   roomName,
   displayName,
   initialMediaSettings,
+  roomPassword,
+  onRoomPasswordChange,
 }: VideoRoomCallProps) {
   const router = useRouter();
-  const videoRoom = useVideoRoom(roomName, displayName, initialMediaSettings);
+  const videoRoom = useVideoRoom(
+    roomName,
+    displayName,
+    initialMediaSettings,
+    roomPassword,
+  );
   const [copyStatus, setCopyStatus] = useState("Copy link");
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
@@ -224,7 +255,7 @@ function VideoRoomCall({
 
   if (videoRoom.error?.kind === "room-full") {
     return (
-      <main className="call-page">
+      <main className="call-page call-access-page">
         <section className="room-full-screen" aria-labelledby="room-full-title">
           <p className="room-full-eyebrow">Room code: {roomName}</p>
           <h1 id="room-full-title">This room is full</h1>
@@ -237,6 +268,25 @@ function VideoRoomCall({
           </button>
         </section>
       </main>
+    );
+  }
+
+  if (videoRoom.error?.kind === "room-password") {
+    return (
+      <RoomPasswordScreen
+        roomName={roomName}
+        errorMessage={videoRoom.error.message}
+        onSubmit={(nextPassword) => {
+          const normalizedPassword = normalizeRoomPassword(nextPassword);
+
+          window.sessionStorage.setItem(
+            getRoomPasswordStorageKey(roomName),
+            normalizedPassword,
+          );
+          onRoomPasswordChange(normalizedPassword);
+        }}
+        onReturnHome={leaveRoom}
+      />
     );
   }
 
@@ -396,6 +446,70 @@ function VideoRoomCall({
         onToggleChat={toggleChat}
         onLeave={leaveRoom}
       />
+    </main>
+  );
+}
+
+type RoomPasswordScreenProps = {
+  roomName: string;
+  errorMessage: string;
+  onSubmit: (roomPassword: string) => void;
+  onReturnHome: () => void;
+};
+
+function RoomPasswordScreen({
+  roomName,
+  errorMessage,
+  onSubmit,
+  onReturnHome,
+}: RoomPasswordScreenProps) {
+  const [passwordInput, setPasswordInput] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+
+  function submitPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalizedPassword = normalizeRoomPassword(passwordInput);
+
+    if (!normalizedPassword) {
+      setPasswordError("Enter the room password to continue.");
+      return;
+    }
+
+    if (!isValidRoomPassword(normalizedPassword)) {
+      setPasswordError("Room passwords must be 128 characters or fewer.");
+      return;
+    }
+
+    setPasswordError("");
+    onSubmit(normalizedPassword);
+  }
+
+  return (
+    <main className="call-page call-access-page">
+      <section className="room-full-screen" aria-labelledby="room-password-title">
+        <p className="room-full-eyebrow">Room code: {roomName}</p>
+        <h1 id="room-password-title">Room password required</h1>
+        <p>{errorMessage}</p>
+        <form className="room-password-form" onSubmit={submitPassword}>
+          <label htmlFor="room-access-password">Password</label>
+          <input
+            id="room-access-password"
+            autoComplete="off"
+            autoFocus
+            type="password"
+            value={passwordInput}
+            onChange={(event) => {
+              setPasswordInput(event.target.value);
+              setPasswordError("");
+            }}
+          />
+          {passwordError ? <p className="form-error">{passwordError}</p> : null}
+          <button type="submit">Join room</button>
+        </form>
+        <button type="button" className="room-secondary-action" onClick={onReturnHome}>
+          Return home
+        </button>
+      </section>
     </main>
   );
 }

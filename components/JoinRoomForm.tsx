@@ -8,11 +8,17 @@ import {
   normalizeDisplayName,
 } from "@/lib/displayName";
 import { isValidRoomName, normalizeRoomName } from "@/lib/room";
+import {
+  getRoomPasswordStorageKey,
+  isValidRoomPassword,
+  normalizeRoomPassword,
+} from "@/lib/roomAccess";
 import { copyText, getRoomUrl } from "@/lib/share";
 
 export function JoinRoomForm() {
   const [roomName, setRoomName] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [roomPassword, setRoomPassword] = useState("");
   const [error, setError] = useState("");
   const [copyStatus, setCopyStatus] = useState("Copy room link");
 
@@ -32,6 +38,7 @@ export function JoinRoomForm() {
 
   function joinRoom(nextRoomName: string) {
     const normalized = normalizeRoomName(nextRoomName);
+    const normalizedPassword = normalizeRoomPassword(roomPassword);
 
     if (!isValidDisplayName(normalizedDisplayName)) {
       setError("Enter a display name between 1 and 40 characters.");
@@ -43,7 +50,21 @@ export function JoinRoomForm() {
       return;
     }
 
+    if (!isValidRoomPassword(normalizedPassword)) {
+      setError("Room passwords must be 128 characters or fewer.");
+      return;
+    }
+
     window.localStorage.setItem(displayNameStorageKey, normalizedDisplayName);
+    if (normalizedPassword) {
+      window.sessionStorage.setItem(
+        getRoomPasswordStorageKey(normalized),
+        normalizedPassword,
+      );
+    } else {
+      window.sessionStorage.removeItem(getRoomPasswordStorageKey(normalized));
+    }
+
     window.location.href = `/room/${encodeURIComponent(normalized)}`;
   }
 
@@ -90,6 +111,19 @@ export function JoinRoomForm() {
           setRoomName(event.target.value);
           setError("");
           setCopyStatus("Copy room link");
+        }}
+      />
+      <label htmlFor="room-password">Room password (optional)</label>
+      <input
+        id="room-password"
+        name="roomPassword"
+        autoComplete="off"
+        type="password"
+        placeholder="Leave blank for a public room"
+        value={roomPassword}
+        onChange={(event) => {
+          setRoomPassword(event.target.value);
+          setError("");
         }}
       />
       {error ? <p className="form-error">{error}</p> : null}

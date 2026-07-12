@@ -66,6 +66,7 @@ type MediaErrorKind =
   | "microphone"
   | "connect"
   | "room-full"
+  | "room-password"
   | "unsupported"
   | "invalid-room"
   | "configuration";
@@ -142,6 +143,13 @@ function toVideoRoomError(error: unknown, fallback: string): VideoRoomError {
     return { kind: "room-full", message };
   }
 
+  if (
+    lowerMessage.includes("room requires a password") ||
+    lowerMessage.includes("incorrect room password")
+  ) {
+    return { kind: "room-password", message };
+  }
+
   return { kind: "connect", message };
 }
 
@@ -211,6 +219,7 @@ export function useVideoRoom(
   roomName: string,
   displayName: string,
   initialMediaSettings: InitialMediaSettings,
+  roomPassword: string,
 ) {
   const roomRef = useRef<Room | null>(null);
   const connectionIdRef = useRef(0);
@@ -639,7 +648,7 @@ export function useVideoRoom(
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ roomName, displayName }),
+          body: JSON.stringify({ roomName, displayName, roomPassword }),
         });
         const tokenData = await readTokenResponse(tokenResponse);
 
@@ -760,6 +769,7 @@ export function useVideoRoom(
     initialMediaSettings.microphoneDeviceId,
     initialMediaSettings.cameraDeviceId,
     initialMediaSettings.speakerDeviceId,
+    roomPassword,
     connectionRevision,
     updateParticipants,
     addParticipantNotice,

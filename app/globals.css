@@ -136,6 +136,10 @@ a {
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);
 }
 
+.join-panel input[type="password"] {
+  font: inherit;
+}
+
 .join-panel button,
 .room-message button,
 .icon-text-button {
@@ -484,6 +488,14 @@ a {
   overflow: hidden;
   background: #111517;
   color: #f7f9f8;
+}
+
+.call-access-page {
+  grid-template-rows: minmax(0, 1fr);
+  place-items: center;
+  padding: max(18px, env(safe-area-inset-top)) 18px
+    max(18px, env(safe-area-inset-bottom));
+  overflow: auto;
 }
 
 .call-topbar {
@@ -925,6 +937,13 @@ a {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
 }
 
+.call-access-page .room-full-screen {
+  align-self: center;
+  justify-self: center;
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
+}
+
 .room-full-screen h1,
 .room-full-screen p {
   margin: 0;
@@ -960,6 +979,42 @@ a {
 
 .room-full-screen button:hover {
   background: #115e59;
+}
+
+.room-password-form {
+  display: grid;
+  gap: 10px;
+}
+
+.room-password-form label {
+  color: #f7f9f8;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.room-password-form input {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: #101416;
+  color: #f7f9f8;
+  outline: none;
+}
+
+.room-password-form input:focus {
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.18);
+}
+
+.room-full-screen .room-secondary-action {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: transparent;
+  color: #f7f9f8;
+}
+
+.room-full-screen .room-secondary-action:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .prejoin-page {

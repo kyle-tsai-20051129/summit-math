@@ -1,14 +1,75 @@
+import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
 import { NextResponse } from "next/server";
 import { isValidDisplayName, normalizeDisplayName } from "@/lib/displayName";
 import { isValidRoomName } from "@/lib/room";
+import {
+  isValidRoomPassword,
+  normalizeRoomPassword,
+} from "@/lib/roomAccess";
 
 const missingEnvMessage =
   "LiveKit is not configured. Set LIVEKIT_API_KEY, LIVEKIT_API_SECRET, and LIVEKIT_URL.";
 const maxParticipants = 4;
+const passwordMetadataVersion = 1;
+
+type RoomAccessMetadata = {
+  access?: {
+    version?: number;
+    salt?: string;
+    passwordHash?: string;
+  };
+};
 
 function toRoomServiceUrl(livekitUrl: string) {
   return livekitUrl.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
+}
+
+function hashRoomPassword(password: string, salt: string) {
+  return createHash("sha256").update(`${salt}:${password}`).digest("hex");
+}
+
+function createPasswordMetadata(password: string): RoomAccessMetadata {
+  const salt = randomBytes(16).toString("hex");
+
+  return {
+    access: {
+      version: passwordMetadataVersion,
+      salt,
+      passwordHash: hashRoomPassword(password, salt),
+    },
+  };
+}
+
+function readRoomAccessMetadata(metadata?: string): RoomAccessMetadata {
+  if (!metadata) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(metadata) as RoomAccessMetadata;
+
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function verifyRoomPassword(password: string, metadata: RoomAccessMetadata) {
+  const access = metadata.access;
+
+  if (!access?.salt || !access.passwordHash) {
+    return true;
+  }
+
+  const attemptedHash = hashRoomPassword(password, access.salt);
+  const expectedHash = Buffer.from(access.passwordHash, "hex");
+  const actualHash = Buffer.from(attemptedHash, "hex");
+
+  return (
+    expectedHash.length === actualHash.length &&
+    timingSafeEqual(expectedHash, actualHash)
+  );
 }
 
 export async function POST(request: Request) {
@@ -42,6 +103,13 @@ export async function POST(request: Request) {
     typeof body.displayName === "string"
       ? normalizeDisplayName(body.displayName)
       : "";
+  const roomPassword =
+    typeof body === "object" &&
+    body !== null &&
+    "roomPassword" in body &&
+    typeof body.roomPassword === "string"
+      ? normalizeRoomPassword(body.roomPassword)
+      : "";
 
   if (!isValidRoomName(roomName)) {
     return NextResponse.json(
@@ -60,6 +128,13 @@ export async function POST(request: Request) {
     );
   }
 
+  if (!isValidRoomPassword(roomPassword)) {
+    return NextResponse.json(
+      { error: "Room passwords must be 128 characters or fewer." },
+      { status: 400 },
+    );
+  }
+
   try {
     const roomService = new RoomServiceClient(
       toRoomServiceUrl(livekitUrl),
@@ -67,11 +142,31 @@ export async function POST(request: Request) {
       apiSecret,
     );
     const rooms = await roomService.listRooms([roomName]);
+    const existingRoom = rooms[0];
 
-    if (rooms.length === 0) {
+    if (existingRoom) {
+      const metadata = readRoomAccessMetadata(existingRoom.metadata);
+
+      if (metadata.access?.passwordHash && !roomPassword) {
+        return NextResponse.json(
+          { error: "This room requires a password." },
+          { status: 401 },
+        );
+      }
+
+      if (!verifyRoomPassword(roomPassword, metadata)) {
+        return NextResponse.json(
+          { error: "Incorrect room password." },
+          { status: 401 },
+        );
+      }
+    } else {
       await roomService.createRoom({
         name: roomName,
         maxParticipants,
+        metadata: roomPassword
+          ? JSON.stringify(createPasswordMetadata(roomPassword))
+          : undefined,
       });
     }
 
