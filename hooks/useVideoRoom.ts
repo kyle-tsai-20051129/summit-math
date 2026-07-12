@@ -14,6 +14,9 @@ import {
 } from "livekit-client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+const chatTopic = "summit-video-chat";
+const maxChatMessageLength = 500;
+
 type TokenResponse = {
   token: string;
   url: string;
@@ -83,8 +86,32 @@ export type ActiveScreenShare = {
   isLocal: boolean;
 };
 
+export type ChatMessage = {
+  id: string;
+  senderIdentity: string;
+  senderName: string;
+  text: string;
+  sentAt: number;
+  isLocal: boolean;
+};
+
+type ChatPayload = {
+  id: string;
+  senderName: string;
+  text: string;
+  sentAt: number;
+};
+
 function getParticipantNoticeName(participant: Participant) {
   return participant.name || "Participant";
+}
+
+function createClientId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function normalizeChatText(text: string) {
+  return text.trim().slice(0, maxChatMessageLength);
 }
 
 function toVideoRoomError(error: unknown, fallback: string): VideoRoomError {
@@ -139,6 +166,39 @@ function isScreenSharePublication(publication: TrackPublication) {
   return publication.source === Track.Source.ScreenShare;
 }
 
+function readChatPayload(payload: Uint8Array): ChatPayload | null {
+  try {
+    const parsedPayload = JSON.parse(new TextDecoder().decode(payload)) as
+      | Partial<ChatPayload>
+      | null;
+
+    if (
+      !parsedPayload ||
+      typeof parsedPayload.id !== "string" ||
+      typeof parsedPayload.senderName !== "string" ||
+      typeof parsedPayload.text !== "string" ||
+      typeof parsedPayload.sentAt !== "number"
+    ) {
+      return null;
+    }
+
+    const text = normalizeChatText(parsedPayload.text);
+
+    if (!text) {
+      return null;
+    }
+
+    return {
+      id: parsedPayload.id,
+      senderName: normalizeChatText(parsedPayload.senderName) || "Participant",
+      text,
+      sentAt: parsedPayload.sentAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
 type InitialMediaSettings = {
   isMicEnabled: boolean;
   isCameraEnabled: boolean;
@@ -180,6 +240,7 @@ export function useVideoRoom(
   const [participantNotices, setParticipantNotices] = useState<
     ParticipantNotice[]
   >([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
   const localParticipant = room?.localParticipant ?? null;
   const remoteParticipant = remoteParticipants[0] ?? null;
@@ -302,6 +363,16 @@ export function useVideoRoom(
     },
     [dismissParticipantNotice],
   );
+
+  const addChatMessage = useCallback((message: ChatMessage) => {
+    setChatMessages((currentMessages) => {
+      if (currentMessages.some((currentMessage) => currentMessage.id === message.id)) {
+        return currentMessages;
+      }
+
+      return [...currentMessages.slice(-99), message];
+    });
+  }, []);
 
   useEffect(
     () => () => {
@@ -471,6 +542,33 @@ export function useVideoRoom(
       syncRoomStateSoon();
     };
 
+    const handleDataReceived = (
+      payload: Uint8Array,
+      participant?: RemoteParticipant,
+      _kind?: unknown,
+      topic?: string,
+    ) => {
+      if (!isCurrentConnection() || topic !== chatTopic || !participant) {
+        return;
+      }
+
+      const chatPayload = readChatPayload(payload);
+
+      if (!chatPayload) {
+        return;
+      }
+
+      addChatMessage({
+        id: chatPayload.id,
+        senderIdentity: participant.identity,
+        senderName:
+          participant.name || chatPayload.senderName || "Participant",
+        text: chatPayload.text,
+        sentAt: chatPayload.sentAt,
+        isLocal: false,
+      });
+    };
+
     const recoverIfRoomStateIsStale = async () => {
       if (!isCurrentConnection() || isCheckingRoomState) {
         return;
@@ -574,6 +672,7 @@ export function useVideoRoom(
           .on(RoomEvent.TrackUnmuted, handleScreenShareStarted)
           .on(RoomEvent.LocalTrackPublished, handleScreenShareStarted)
           .on(RoomEvent.LocalTrackUnpublished, handleScreenShareStopped)
+          .on(RoomEvent.DataReceived, handleDataReceived)
           .on(RoomEvent.Disconnected, handleDisconnected);
 
         await nextRoom.connect(tokenData.url, tokenData.token);
@@ -664,6 +763,7 @@ export function useVideoRoom(
     connectionRevision,
     updateParticipants,
     addParticipantNotice,
+    addChatMessage,
     forgetScreenShareOwner,
     rememberScreenShareOwner,
   ]);
@@ -814,6 +914,47 @@ export function useVideoRoom(
     updateParticipants,
   ]);
 
+  const sendChatMessage = useCallback(
+    async (text: string) => {
+      const currentRoom = roomRef.current;
+      const normalizedText = normalizeChatText(text);
+
+      if (!currentRoom || !normalizedText) {
+        return false;
+      }
+
+      const chatPayload: ChatPayload = {
+        id: createClientId(),
+        senderName:
+          currentRoom.localParticipant.name || displayName || "You",
+        text: normalizedText,
+        sentAt: Date.now(),
+      };
+
+      try {
+        await currentRoom.localParticipant.publishData(
+          new TextEncoder().encode(JSON.stringify(chatPayload)),
+          {
+            reliable: true,
+            topic: chatTopic,
+          },
+        );
+
+        addChatMessage({
+          ...chatPayload,
+          senderIdentity: currentRoom.localParticipant.identity,
+          isLocal: true,
+        });
+
+        return true;
+      } catch {
+        addParticipantNotice("Unable to send chat message.");
+        return false;
+      }
+    },
+    [addChatMessage, addParticipantNotice, displayName],
+  );
+
   return useMemo(
     () => ({
       room,
@@ -830,9 +971,11 @@ export function useVideoRoom(
       isScreenSharing,
       hasRemoteParticipant: remoteParticipants.length > 0,
       participantNotices,
+      chatMessages,
       participantCount:
         visibleRemoteParticipants.length + (localParticipant ? 1 : 0),
       dismissParticipantNotice,
+      sendChatMessage,
       toggleMicrophone,
       toggleCamera,
       toggleScreenShare,
@@ -854,7 +997,9 @@ export function useVideoRoom(
       isScreenSharing,
       remoteParticipants.length,
       participantNotices,
+      chatMessages,
       dismissParticipantNotice,
+      sendChatMessage,
       toggleMicrophone,
       toggleCamera,
       toggleScreenShare,

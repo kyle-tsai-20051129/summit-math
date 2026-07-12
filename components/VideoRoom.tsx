@@ -2,8 +2,9 @@
 
 import { Copy, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { CallControls } from "@/components/CallControls";
+import { ChatPanel } from "@/components/ChatPanel";
 import {
   ConnectionStatus,
   getCallConnectionStatus,
@@ -139,6 +140,9 @@ function VideoRoomCall({
   const router = useRouter();
   const videoRoom = useVideoRoom(roomName, displayName, initialMediaSettings);
   const [copyStatus, setCopyStatus] = useState("Copy link");
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const seenChatMessageCountRef = useRef(0);
   const callStatus = getCallConnectionStatus(
     videoRoom.connectionState,
     videoRoom.connectionQuality,
@@ -175,11 +179,48 @@ function VideoRoomCall({
     router.push("/");
   }
 
+  function toggleChat() {
+    setIsChatOpen((currentValue) => {
+      const nextValue = !currentValue;
+
+      if (nextValue) {
+        setUnreadChatCount(0);
+      }
+
+      return nextValue;
+    });
+  }
+
   async function copyRoomLink() {
     await copyText(getRoomUrl(roomName));
     setCopyStatus("Copied");
     window.setTimeout(() => setCopyStatus("Copy link"), 1600);
   }
+
+  useEffect(() => {
+    const previousMessageCount = seenChatMessageCountRef.current;
+    const nextMessages = videoRoom.chatMessages.slice(previousMessageCount);
+
+    if (!isChatOpen) {
+      const remoteUnreadMessages = nextMessages.filter(
+        (message) => !message.isLocal,
+      ).length;
+
+      if (remoteUnreadMessages > 0) {
+        setUnreadChatCount((currentCount) =>
+          Math.min(99, currentCount + remoteUnreadMessages),
+        );
+      }
+    }
+
+    seenChatMessageCountRef.current = videoRoom.chatMessages.length;
+  }, [isChatOpen, videoRoom.chatMessages]);
+
+  useEffect(() => {
+    if (isChatOpen) {
+      setUnreadChatCount(0);
+    }
+  }, [isChatOpen]);
 
   if (videoRoom.error?.kind === "room-full") {
     return (
@@ -248,6 +289,14 @@ function VideoRoomCall({
           ))}
         </div>
       ) : null}
+
+      <ChatPanel
+        messages={videoRoom.chatMessages}
+        isOpen={isChatOpen}
+        isDisabled={videoRoom.isConnecting}
+        onClose={() => setIsChatOpen(false)}
+        onSendMessage={videoRoom.sendChatMessage}
+      />
 
       {hasActiveScreenShare && videoRoom.activeScreenShare ? (
         <section className="call-stage screen-share-layout" aria-label="Video call">
@@ -338,10 +387,13 @@ function VideoRoomCall({
         isCameraEnabled={videoRoom.isCameraEnabled}
         isMicEnabled={videoRoom.isMicEnabled}
         isScreenSharing={videoRoom.isScreenSharing}
+        isChatOpen={isChatOpen}
+        unreadChatCount={unreadChatCount}
         isDisabled={videoRoom.isConnecting}
         onToggleCamera={videoRoom.toggleCamera}
         onToggleMicrophone={videoRoom.toggleMicrophone}
         onToggleScreenShare={videoRoom.toggleScreenShare}
+        onToggleChat={toggleChat}
         onLeave={leaveRoom}
       />
     </main>

@@ -1,15 +1,26 @@
 "use client";
 
-import { Mic, MicOff, MonitorUp, PhoneOff, Video, VideoOff } from "lucide-react";
+import {
+  MessageSquare,
+  Mic,
+  MicOff,
+  MonitorUp,
+  PhoneOff,
+  Video,
+  VideoOff,
+} from "lucide-react";
 
 type CallControlsProps = {
   isMicEnabled: boolean;
   isCameraEnabled: boolean;
   isScreenSharing: boolean;
+  isChatOpen: boolean;
+  unreadChatCount: number;
   isDisabled: boolean;
   onToggleMicrophone: () => void;
   onToggleCamera: () => void;
   onToggleScreenShare: () => void;
+  onToggleChat: () => void;
   onLeave: () => void;
 };
 
@@ -17,10 +28,13 @@ export function CallControls({
   isMicEnabled,
   isCameraEnabled,
   isScreenSharing,
+  isChatOpen,
+  unreadChatCount,
   isDisabled,
   onToggleMicrophone,
   onToggleCamera,
   onToggleScreenShare,
+  onToggleChat,
   onLeave,
 }: CallControlsProps) {
   return (
@@ -70,6 +84,22 @@ export function CallControls({
           {isScreenSharing ? "Stop sharing screen" : "Share screen"}
         </span>
         <span aria-hidden="true">{isScreenSharing ? "Stop share" : "Share"}</span>
+      </button>
+      <button
+        type="button"
+        className={`control-button chat-control-button ${isChatOpen ? "control-active" : ""}`}
+        onClick={onToggleChat}
+        title={isChatOpen ? "Close chat" : "Open chat"}
+        aria-pressed={isChatOpen}
+      >
+        <MessageSquare aria-hidden="true" />
+        {unreadChatCount > 0 ? (
+          <span className="chat-unread-badge" aria-label={`${unreadChatCount} unread chat messages`}>
+            {unreadChatCount > 9 ? "9+" : unreadChatCount}
+          </span>
+        ) : null}
+        <span className="sr-only">{isChatOpen ? "Close chat" : "Open chat"}</span>
+        <span aria-hidden="true">Chat</span>
       </button>
       <button type="button" className="leave-button" onClick={onLeave}>
         <PhoneOff aria-hidden="true" />

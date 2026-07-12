@@ -105,6 +105,7 @@ export async function POST(request: Request) {
     room: roomName,
     roomJoin: true,
     canPublish: true,
+    canPublishData: true,
     canSubscribe: true,
   });
 
