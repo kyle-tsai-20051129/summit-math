@@ -1,10 +1,15 @@
 "use client";
 
-import { Copy, Loader2 } from "lucide-react";
+import { Copy, Loader2, ShieldCheck } from "lucide-react";
+import { Track } from "livekit-client";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { CallControls } from "@/components/CallControls";
 import { ChatPanel } from "@/components/ChatPanel";
+import {
+  HostControlsPanel,
+  HostParticipant,
+} from "@/components/HostControlsPanel";
 import {
   ConnectionStatus,
   getCallConnectionStatus,
@@ -22,6 +27,7 @@ import {
 import { isValidRoomName, normalizeRoomName } from "@/lib/room";
 import {
   getRoomAccessModeStorageKey,
+  getRoomHostKeyStorageKey,
   getRoomPasswordStorageKey,
   isRoomAccessMode,
   isValidRoomPassword,
@@ -47,6 +53,7 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
   const [roomPassword, setRoomPassword] = useState("");
   const [roomAccessMode, setRoomAccessMode] =
     useState<RoomAccessMode>("join");
+  const [hostKey, setHostKey] = useState("");
 
   useEffect(() => {
     const storedDisplayName = window.localStorage.getItem(displayNameStorageKey);
@@ -69,6 +76,9 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
     const storedAccessMode = window.sessionStorage.getItem(
       getRoomAccessModeStorageKey(roomName),
     );
+    const storedHostKey = window.sessionStorage.getItem(
+      getRoomHostKeyStorageKey(roomName),
+    );
 
     if (storedRoomPassword && isValidRoomPassword(storedRoomPassword)) {
       setRoomPassword(normalizeRoomPassword(storedRoomPassword));
@@ -77,6 +87,10 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
     if (storedAccessMode && isRoomAccessMode(storedAccessMode)) {
       setRoomAccessMode(storedAccessMode);
       window.sessionStorage.removeItem(getRoomAccessModeStorageKey(roomName));
+    }
+
+    if (storedHostKey) {
+      setHostKey(storedHostKey);
     }
   }, [isValid, roomName]);
 
@@ -157,6 +171,7 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
       initialMediaSettings={joinSettings}
       roomPassword={roomPassword}
       roomAccessMode={roomAccessMode}
+      hostKey={hostKey}
       onRoomPasswordChange={setRoomPassword}
     />
   );
@@ -168,6 +183,7 @@ type VideoRoomCallProps = {
   initialMediaSettings: JoinMediaSettings;
   roomPassword: string;
   roomAccessMode: RoomAccessMode;
+  hostKey: string;
   onRoomPasswordChange: (roomPassword: string) => void;
 };
 
@@ -177,6 +193,7 @@ function VideoRoomCall({
   initialMediaSettings,
   roomPassword,
   roomAccessMode,
+  hostKey,
   onRoomPasswordChange,
 }: VideoRoomCallProps) {
   const router = useRouter();
@@ -186,9 +203,13 @@ function VideoRoomCall({
     initialMediaSettings,
     roomPassword,
     roomAccessMode,
+    hostKey,
   );
   const [copyStatus, setCopyStatus] = useState("Copy link");
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isHostPanelOpen, setIsHostPanelOpen] = useState(false);
+  const [isHostActionBusy, setIsHostActionBusy] = useState(false);
+  const [hostActionError, setHostActionError] = useState("");
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const seenChatMessageCountRef = useRef(0);
   const callStatus = getCallConnectionStatus(
@@ -221,6 +242,15 @@ function VideoRoomCall({
   ];
   const visibleCount = callParticipants.length;
   const hasActiveScreenShare = Boolean(videoRoom.activeScreenShare);
+  const hostParticipants: HostParticipant[] = videoRoom.remoteParticipants.map(
+    (participant, index) => ({
+      identity: participant.identity,
+      label: participant.name || `Participant ${index + 2}`,
+      isMicrophoneEnabled: !participant.getTrackPublication(
+        Track.Source.Microphone,
+      )?.isMuted,
+    }),
+  );
 
   function leaveRoom() {
     videoRoom.disconnect();
@@ -243,6 +273,59 @@ function VideoRoomCall({
     await copyText(getRoomUrl(roomName));
     setCopyStatus("Copied");
     window.setTimeout(() => setCopyStatus("Copy link"), 1600);
+  }
+
+  async function runHostAction(
+    action: "lock" | "remove" | "mute",
+    options: { targetIdentity?: string; locked?: boolean } = {},
+  ) {
+    if (!hostKey) {
+      setHostActionError("Host controls are only available to the room creator.");
+      return;
+    }
+
+    setIsHostActionBusy(true);
+    setHostActionError("");
+
+    try {
+      const response = await fetch("/api/host-controls", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          roomName,
+          hostKey,
+          action,
+          ...options,
+        }),
+      });
+      const result = (await response.json()) as {
+        locked?: boolean;
+        message?: string;
+        error?: string;
+      };
+
+      if (!response.ok || result.error) {
+        throw new Error(result.error || "Host action failed.");
+      }
+
+      if (typeof result.locked === "boolean") {
+        videoRoom.setIsRoomLocked(result.locked);
+      }
+
+      if (result.message) {
+        window.setTimeout(() => setHostActionError(""), 2200);
+      }
+    } catch (caughtError) {
+      setHostActionError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Host action failed.",
+      );
+    } finally {
+      setIsHostActionBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -325,6 +408,21 @@ function VideoRoomCall({
     );
   }
 
+  if (videoRoom.error?.kind === "room-locked") {
+    return (
+      <main className="call-page call-access-page">
+        <section className="room-full-screen" aria-labelledby="room-locked-title">
+          <p className="room-full-eyebrow">Room code: {roomName}</p>
+          <h1 id="room-locked-title">Room locked</h1>
+          <p>The host locked this room. Ask the host to unlock it before joining.</p>
+          <button type="button" onClick={leaveRoom}>
+            Return home
+          </button>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="call-page">
       <header className="call-topbar">
@@ -337,6 +435,17 @@ function VideoRoomCall({
           quality={videoRoom.connectionQuality}
           errorMessage={videoRoom.error?.message}
         />
+        {videoRoom.isHost ? (
+          <button
+            className="topbar-copy-button host-topbar-button"
+            type="button"
+            onClick={() => setIsHostPanelOpen((isOpen) => !isOpen)}
+            title="Host controls"
+          >
+            <ShieldCheck aria-hidden="true" size={16} />
+            Host
+          </button>
+        ) : null}
         <button
           className="topbar-copy-button"
           type="button"
@@ -382,6 +491,26 @@ function VideoRoomCall({
         onClose={() => setIsChatOpen(false)}
         onSendMessage={videoRoom.sendChatMessage}
       />
+
+      {videoRoom.isHost ? (
+        <HostControlsPanel
+          participants={hostParticipants}
+          isOpen={isHostPanelOpen}
+          isLocked={videoRoom.isRoomLocked}
+          isBusy={isHostActionBusy}
+          errorMessage={hostActionError}
+          onClose={() => setIsHostPanelOpen(false)}
+          onToggleLock={() =>
+            runHostAction("lock", { locked: !videoRoom.isRoomLocked })
+          }
+          onMuteParticipant={(targetIdentity) =>
+            runHostAction("mute", { targetIdentity })
+          }
+          onRemoveParticipant={(targetIdentity) =>
+            runHostAction("remove", { targetIdentity })
+          }
+        />
+      ) : null}
 
       {hasActiveScreenShare && videoRoom.activeScreenShare ? (
         <section className="call-stage screen-share-layout" aria-label="Video call">

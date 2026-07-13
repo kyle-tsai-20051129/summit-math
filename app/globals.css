@@ -633,6 +633,173 @@ a {
   background: rgba(255, 255, 255, 0.14);
 }
 
+.host-topbar-button {
+  color: #ccfbf1;
+}
+
+.host-panel {
+  position: fixed;
+  z-index: 7;
+  top: 70px;
+  right: 18px;
+  width: min(360px, calc(100vw - 36px));
+  max-height: min(560px, calc(100dvh - 154px));
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: #1a2022;
+  color: #f7f9f8;
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.42);
+  overflow: auto;
+}
+
+.host-panel-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.host-panel-header p,
+.host-panel-header h2,
+.host-panel-empty,
+.host-panel-error {
+  margin: 0;
+}
+
+.host-panel-header p {
+  color: #5eead4;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.host-panel-header h2 {
+  margin-top: 3px;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
+.host-panel-header button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #d4d8d7;
+}
+
+.host-panel-header button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.host-panel-header svg {
+  width: 20px;
+  height: 20px;
+}
+
+.host-lock-button {
+  min-height: 42px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #f7f9f8;
+  font-weight: 800;
+}
+
+.host-lock-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.host-lock-active {
+  border-color: rgba(94, 234, 212, 0.36);
+  background: rgba(20, 184, 166, 0.18);
+  color: #ccfbf1;
+}
+
+.host-panel-error {
+  color: #fecaca;
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.host-participant-list {
+  display: grid;
+  gap: 8px;
+}
+
+.host-participant-row {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.host-participant-row > span {
+  min-width: 0;
+  overflow: hidden;
+  color: #f7f9f8;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-participant-row > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.host-participant-row button {
+  min-height: 36px;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #f7f9f8;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.host-participant-row button:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.host-participant-row button:disabled {
+  opacity: 0.45;
+}
+
+.host-participant-row .host-danger-button {
+  background: rgba(255, 75, 95, 0.14);
+  color: #fecaca;
+}
+
+.host-participant-row .host-danger-button:hover {
+  background: rgba(255, 75, 95, 0.22);
+}
+
+.host-panel-empty {
+  padding: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  color: #b9c0c3;
+  text-align: center;
+}
+
 .call-status-toast {
   position: fixed;
   z-index: 5;
@@ -1581,6 +1748,13 @@ a {
     height: min(480px, calc(100dvh - 136px));
   }
 
+  .host-panel {
+    top: 58px;
+    right: 10px;
+    width: min(360px, calc(100vw - 20px));
+    max-height: min(480px, calc(100dvh - 136px));
+  }
+
   .participant-grid {
     gap: 8px;
     padding: 8px;
@@ -1731,6 +1905,13 @@ a {
     width: min(340px, calc(100vw - 16px));
     height: min(320px, calc(100dvh - 104px));
     min-height: 210px;
+  }
+
+  .host-panel {
+    top: 48px;
+    right: 8px;
+    width: min(340px, calc(100vw - 16px));
+    max-height: min(320px, calc(100dvh - 104px));
   }
 
   .chat-panel-header {

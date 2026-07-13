@@ -9,7 +9,9 @@ import {
 } from "@/lib/displayName";
 import { isValidRoomName, normalizeRoomName } from "@/lib/room";
 import {
+  createRoomHostKey,
   getRoomAccessModeStorageKey,
+  getRoomHostKeyStorageKey,
   getRoomPasswordStorageKey,
   isValidRoomPassword,
   normalizeRoomPassword,
@@ -74,6 +76,13 @@ export function JoinRoomForm() {
       getRoomAccessModeStorageKey(normalized),
       nextAccessMode,
     );
+
+    if (nextAccessMode === "create") {
+      window.sessionStorage.setItem(
+        getRoomHostKeyStorageKey(normalized),
+        createRoomHostKey(),
+      );
+    }
 
     if (shouldUsePassword && normalizedPassword) {
       window.sessionStorage.setItem(

@@ -22,6 +22,8 @@ type TokenResponse = {
   token: string;
   url: string;
   identity: string;
+  isHost?: boolean;
+  isRoomLocked?: boolean;
   error?: string;
 };
 
@@ -68,6 +70,7 @@ type MediaErrorKind =
   | "connect"
   | "room-exists"
   | "room-full"
+  | "room-locked"
   | "room-password"
   | "unsupported"
   | "invalid-room"
@@ -149,6 +152,10 @@ function toVideoRoomError(error: unknown, fallback: string): VideoRoomError {
     return { kind: "room-exists", message };
   }
 
+  if (lowerMessage.includes("room is locked")) {
+    return { kind: "room-locked", message };
+  }
+
   if (
     lowerMessage.includes("room requires a password") ||
     lowerMessage.includes("incorrect room password")
@@ -227,6 +234,7 @@ export function useVideoRoom(
   initialMediaSettings: InitialMediaSettings,
   roomPassword: string,
   roomAccessMode: RoomAccessMode,
+  hostKey: string,
 ) {
   const roomRef = useRef<Room | null>(null);
   const connectionIdRef = useRef(0);
@@ -257,6 +265,8 @@ export function useVideoRoom(
     ParticipantNotice[]
   >([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isHost, setIsHost] = useState(false);
+  const [isRoomLocked, setIsRoomLocked] = useState(false);
 
   const localParticipant = room?.localParticipant ?? null;
   const remoteParticipant = remoteParticipants[0] ?? null;
@@ -660,6 +670,7 @@ export function useVideoRoom(
             displayName,
             roomPassword,
             roomAccessMode,
+            hostKey,
           }),
         });
         const tokenData = await readTokenResponse(tokenResponse);
@@ -730,6 +741,8 @@ export function useVideoRoom(
         }
 
         setRoom(nextRoom);
+        setIsHost(Boolean(tokenData.isHost));
+        setIsRoomLocked(Boolean(tokenData.isRoomLocked));
         setConnectionQuality(nextRoom.localParticipant.connectionQuality);
         syncRoomState();
         hasCompletedInitialSync = true;
@@ -745,6 +758,7 @@ export function useVideoRoom(
             roomRef.current = null;
           }
           setRoom(null);
+          setIsHost(false);
           setConnectionState(ConnectionState.Disconnected);
           setConnectionQuality(ConnectionQuality.Unknown);
         }
@@ -783,6 +797,7 @@ export function useVideoRoom(
     initialMediaSettings.speakerDeviceId,
     roomPassword,
     roomAccessMode,
+    hostKey,
     connectionRevision,
     updateParticipants,
     addParticipantNotice,
@@ -992,6 +1007,9 @@ export function useVideoRoom(
       isMicEnabled,
       isCameraEnabled,
       isScreenSharing,
+      isHost,
+      isRoomLocked,
+      setIsRoomLocked,
       hasRemoteParticipant: remoteParticipants.length > 0,
       participantNotices,
       chatMessages,
@@ -1018,6 +1036,8 @@ export function useVideoRoom(
       isMicEnabled,
       isCameraEnabled,
       isScreenSharing,
+      isHost,
+      isRoomLocked,
       remoteParticipants.length,
       participantNotices,
       chatMessages,
