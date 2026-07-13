@@ -29,6 +29,7 @@ import {
   getRoomAccessModeStorageKey,
   getRoomHostKeyStorageKey,
   getRoomPasswordStorageKey,
+  getRoomWaitingRoomStorageKey,
   isRoomAccessMode,
   isValidRoomPassword,
   normalizeRoomPassword,
@@ -54,6 +55,7 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
   const [roomAccessMode, setRoomAccessMode] =
     useState<RoomAccessMode>("join");
   const [hostKey, setHostKey] = useState("");
+  const [waitingRoomEnabled, setWaitingRoomEnabled] = useState(false);
 
   useEffect(() => {
     const storedDisplayName = window.localStorage.getItem(displayNameStorageKey);
@@ -76,8 +78,12 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
     const storedAccessMode = window.sessionStorage.getItem(
       getRoomAccessModeStorageKey(roomName),
     );
-    const storedHostKey = window.sessionStorage.getItem(
-      getRoomHostKeyStorageKey(roomName),
+    const hostKeyStorageKey = getRoomHostKeyStorageKey(roomName);
+    const storedHostKey =
+      window.sessionStorage.getItem(hostKeyStorageKey) ??
+      window.localStorage.getItem(hostKeyStorageKey);
+    const storedWaitingRoomEnabled = window.sessionStorage.getItem(
+      getRoomWaitingRoomStorageKey(roomName),
     );
 
     if (storedRoomPassword && isValidRoomPassword(storedRoomPassword)) {
@@ -91,7 +97,10 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
 
     if (storedHostKey) {
       setHostKey(storedHostKey);
+      window.sessionStorage.setItem(hostKeyStorageKey, storedHostKey);
     }
+
+    setWaitingRoomEnabled(storedWaitingRoomEnabled === "true");
   }, [isValid, roomName]);
 
   function saveDisplayName(event: FormEvent<HTMLFormElement>) {
@@ -172,6 +181,7 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
       roomPassword={roomPassword}
       roomAccessMode={roomAccessMode}
       hostKey={hostKey}
+      waitingRoomEnabled={waitingRoomEnabled}
       onRoomPasswordChange={setRoomPassword}
     />
   );
@@ -184,6 +194,7 @@ type VideoRoomCallProps = {
   roomPassword: string;
   roomAccessMode: RoomAccessMode;
   hostKey: string;
+  waitingRoomEnabled: boolean;
   onRoomPasswordChange: (roomPassword: string) => void;
 };
 
@@ -194,6 +205,7 @@ function VideoRoomCall({
   roomPassword,
   roomAccessMode,
   hostKey,
+  waitingRoomEnabled,
   onRoomPasswordChange,
 }: VideoRoomCallProps) {
   const router = useRouter();
@@ -204,12 +216,16 @@ function VideoRoomCall({
     roomPassword,
     roomAccessMode,
     hostKey,
+    waitingRoomEnabled,
   );
   const [copyStatus, setCopyStatus] = useState("Copy link");
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isHostPanelOpen, setIsHostPanelOpen] = useState(false);
   const [isHostActionBusy, setIsHostActionBusy] = useState(false);
   const [hostActionError, setHostActionError] = useState("");
+  const [waitingParticipants, setWaitingParticipants] = useState<
+    { id: string; label: string }[]
+  >([]);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const seenChatMessageCountRef = useRef(0);
   const callStatus = getCallConnectionStatus(
@@ -253,6 +269,7 @@ function VideoRoomCall({
   );
 
   function leaveRoom() {
+    void videoRoom.cancelWaitingRoomRequest();
     videoRoom.disconnect();
     router.push("/");
   }
@@ -276,7 +293,7 @@ function VideoRoomCall({
   }
 
   async function runHostAction(
-    action: "lock" | "remove" | "mute",
+    action: "lock" | "remove" | "mute" | "admit" | "deny",
     options: { targetIdentity?: string; locked?: boolean } = {},
   ) {
     if (!hostKey) {
@@ -317,6 +334,14 @@ function VideoRoomCall({
       if (result.message) {
         window.setTimeout(() => setHostActionError(""), 2200);
       }
+
+      if (action === "admit" || action === "deny") {
+        setWaitingParticipants((currentParticipants) =>
+          currentParticipants.filter(
+            (participant) => participant.id !== options.targetIdentity,
+          ),
+        );
+      }
     } catch (caughtError) {
       setHostActionError(
         caughtError instanceof Error
@@ -352,6 +377,72 @@ function VideoRoomCall({
       setUnreadChatCount(0);
     }
   }, [isChatOpen]);
+
+  useEffect(() => {
+    if (!videoRoom.isHost || !hostKey) {
+      setWaitingParticipants([]);
+      return;
+    }
+
+    let active = true;
+
+    const loadWaitingParticipants = async () => {
+      try {
+        const response = await fetch("/api/host-controls", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ roomName, hostKey, action: "waiting" }),
+        });
+        const result = (await response.json()) as {
+          requests?: { id: string; label: string }[];
+        };
+
+        if (active && response.ok && result.requests) {
+          setWaitingParticipants(result.requests);
+        }
+      } catch {
+        // Keep the last visible waiting-room list if a refresh briefly fails.
+      }
+    };
+
+    void loadWaitingParticipants();
+    const interval = window.setInterval(loadWaitingParticipants, 1800);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [hostKey, roomName, videoRoom.isHost]);
+
+  if (videoRoom.isWaitingForApproval) {
+    return (
+      <main className="call-page call-access-page">
+        <section className="room-full-screen" aria-labelledby="waiting-room-title">
+          <p className="room-full-eyebrow">Room code: {roomName}</p>
+          <h1 id="waiting-room-title">Waiting for host approval</h1>
+          <p>The host will let you into the call when they are ready.</p>
+          <button type="button" className="room-secondary-action" onClick={leaveRoom}>
+            Return home
+          </button>
+        </section>
+      </main>
+    );
+  }
+
+  if (videoRoom.error?.kind === "waiting-room-denied") {
+    return (
+      <main className="call-page call-access-page">
+        <section className="room-full-screen" aria-labelledby="waiting-room-denied-title">
+          <p className="room-full-eyebrow">Room code: {roomName}</p>
+          <h1 id="waiting-room-denied-title">Unable to join this call</h1>
+          <p>{videoRoom.error.message}</p>
+          <button type="button" onClick={leaveRoom}>
+            Return home
+          </button>
+        </section>
+      </main>
+    );
+  }
 
   if (videoRoom.error?.kind === "room-full") {
     return (
@@ -495,6 +586,7 @@ function VideoRoomCall({
       {videoRoom.isHost ? (
         <HostControlsPanel
           participants={hostParticipants}
+          waitingParticipants={waitingParticipants}
           isOpen={isHostPanelOpen}
           isLocked={videoRoom.isRoomLocked}
           isBusy={isHostActionBusy}
@@ -508,6 +600,12 @@ function VideoRoomCall({
           }
           onRemoveParticipant={(targetIdentity) =>
             runHostAction("remove", { targetIdentity })
+          }
+          onAdmitParticipant={(targetIdentity) =>
+            runHostAction("admit", { targetIdentity })
+          }
+          onDeclineParticipant={(targetIdentity) =>
+            runHostAction("deny", { targetIdentity })
           }
         />
       ) : null}

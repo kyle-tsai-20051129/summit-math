@@ -15,6 +15,13 @@ import {
   verifyHostKey,
   verifyRoomPassword,
 } from "@/lib/serverRoomAccess";
+import {
+  createRoomSettings,
+  createWaitingRoomRequest,
+  getOrMigrateRoomSettings,
+  getWaitingRoomRequestsForRoom,
+  toRoomAccessMetadata,
+} from "@/lib/roomDatabase";
 
 const missingEnvMessage =
   "LiveKit is not configured. Set LIVEKIT_API_KEY, LIVEKIT_API_SECRET, and LIVEKIT_URL.";
@@ -77,6 +84,20 @@ export async function POST(request: Request) {
     typeof body.hostKey === "string"
       ? body.hostKey.trim()
       : "";
+  const admissionRequestId =
+    typeof body === "object" &&
+    body !== null &&
+    "admissionRequestId" in body &&
+    typeof body.admissionRequestId === "string"
+      ? body.admissionRequestId.trim()
+      : "";
+  const waitingRoomEnabled =
+    typeof body === "object" &&
+    body !== null &&
+    "waitingRoomEnabled" in body &&
+    typeof body.waitingRoomEnabled === "boolean"
+      ? body.waitingRoomEnabled
+      : false;
 
   if (!isValidRoomName(roomName)) {
     return NextResponse.json(
@@ -132,9 +153,18 @@ export async function POST(request: Request) {
         );
       }
 
-      const metadata = readRoomAccessMetadata(existingRoom.metadata);
+      const storedSettings = getOrMigrateRoomSettings(
+        roomName,
+        readRoomAccessMetadata(existingRoom.metadata),
+      );
+
+      if (!storedSettings) {
+        throw new Error("Unable to load the saved room settings.");
+      }
+
+      const metadata = toRoomAccessMetadata(storedSettings);
       isHost = verifyHostKey(hostKey, metadata);
-      isRoomLocked = Boolean(metadata.settings?.locked);
+      isRoomLocked = storedSettings.locked;
 
       if (isRoomLocked && !isHost) {
         return NextResponse.json(
@@ -156,20 +186,52 @@ export async function POST(request: Request) {
           { status: 401 },
         );
       }
+
+      if (storedSettings.waitingRoomEnabled && !isHost) {
+        const requests = getWaitingRoomRequestsForRoom(roomName);
+        const admissionRequest = requests.find(
+          (request) => request.id === admissionRequestId,
+        );
+
+        if (admissionRequest?.status === "denied") {
+          return NextResponse.json(
+            { error: "The host did not admit this request." },
+            { status: 403 },
+          );
+        }
+
+        if (admissionRequest?.status !== "admitted") {
+          const requestId = admissionRequest?.id || crypto.randomUUID();
+          if (!admissionRequest) {
+            createWaitingRoomRequest(roomName, requestId, displayName);
+          }
+
+          return NextResponse.json(
+            {
+              status: "waiting",
+              requestId,
+              message: "Waiting for the host to admit you.",
+            },
+            { status: 202 },
+          );
+        }
+      }
     } else {
+      const roomMetadata = {
+        access: roomPassword ? createPasswordMetadata(roomPassword) : undefined,
+        host: hostKey ? createHostMetadata(hostKey) : undefined,
+        settings: {
+          locked: false,
+          waitingRoomEnabled,
+        },
+      };
+
       await roomService.createRoom({
         name: roomName,
         maxParticipants,
-        metadata: JSON.stringify({
-          access: roomPassword
-            ? createPasswordMetadata(roomPassword)
-            : undefined,
-          host: hostKey ? createHostMetadata(hostKey) : undefined,
-          settings: {
-            locked: false,
-          },
-        }),
+        metadata: JSON.stringify({ version: 1 }),
       });
+      createRoomSettings(roomName, roomMetadata);
       isHost = Boolean(hostKey);
     }
 

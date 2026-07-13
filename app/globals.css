@@ -669,6 +669,20 @@ a {
   margin: 0;
 }
 
+.host-waiting-list {
+  display: grid;
+  gap: 8px;
+}
+
+.host-section-label {
+  margin: 0;
+  color: #b9c0c3;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
 .host-panel-header p {
   color: #5eead4;
   font-size: 0.72rem;

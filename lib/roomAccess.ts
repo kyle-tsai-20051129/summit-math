@@ -3,6 +3,7 @@ export const maxRoomPasswordLength = 128;
 const roomPasswordSessionPrefix = "summit-video-room-password:";
 const roomAccessModeSessionPrefix = "summit-video-room-access-mode:";
 const roomHostKeySessionPrefix = "summit-video-room-host-key:";
+const roomWaitingRoomSessionPrefix = "summit-video-room-waiting-room:";
 
 export type RoomAccessMode = "join" | "create";
 
@@ -24,6 +25,10 @@ export function getRoomAccessModeStorageKey(roomName: string) {
 
 export function getRoomHostKeyStorageKey(roomName: string) {
   return `${roomHostKeySessionPrefix}${roomName}`;
+}
+
+export function getRoomWaitingRoomStorageKey(roomName: string) {
+  return `${roomWaitingRoomSessionPrefix}${roomName}`;
 }
 
 export function isRoomAccessMode(value: string): value is RoomAccessMode {

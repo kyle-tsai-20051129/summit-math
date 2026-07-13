@@ -19,11 +19,18 @@ const chatTopic = "summit-video-chat";
 const maxChatMessageLength = 500;
 
 type TokenResponse = {
-  token: string;
-  url: string;
-  identity: string;
+  token?: string;
+  url?: string;
+  identity?: string;
   isHost?: boolean;
   isRoomLocked?: boolean;
+  status?: "waiting";
+  requestId?: string;
+  error?: string;
+};
+
+type WaitingRoomStatusResponse = {
+  status?: "pending" | "admitted" | "denied";
   error?: string;
 };
 
@@ -64,6 +71,20 @@ async function readRoomState(roomName: string): Promise<RoomStateResponse> {
   return roomState;
 }
 
+async function readWaitingRoomStatus(roomName: string, requestId: string) {
+  const response = await fetch(
+    `/api/waiting-room?roomName=${encodeURIComponent(roomName)}&requestId=${encodeURIComponent(requestId)}`,
+    { cache: "no-store" },
+  );
+  const result = (await response.json()) as WaitingRoomStatusResponse;
+
+  if (!response.ok || result.error || !result.status) {
+    throw new Error(result.error || "Unable to check host approval.");
+  }
+
+  return result.status;
+}
+
 type MediaErrorKind =
   | "camera"
   | "microphone"
@@ -72,6 +93,7 @@ type MediaErrorKind =
   | "room-full"
   | "room-locked"
   | "room-password"
+  | "waiting-room-denied"
   | "unsupported"
   | "invalid-room"
   | "configuration";
@@ -156,6 +178,10 @@ function toVideoRoomError(error: unknown, fallback: string): VideoRoomError {
     return { kind: "room-locked", message };
   }
 
+  if (lowerMessage.includes("did not admit")) {
+    return { kind: "waiting-room-denied", message };
+  }
+
   if (
     lowerMessage.includes("room requires a password") ||
     lowerMessage.includes("incorrect room password")
@@ -235,9 +261,11 @@ export function useVideoRoom(
   roomPassword: string,
   roomAccessMode: RoomAccessMode,
   hostKey: string,
+  waitingRoomEnabled: boolean,
 ) {
   const roomRef = useRef<Room | null>(null);
   const connectionIdRef = useRef(0);
+  const waitingRequestIdRef = useRef("");
   const noticeTimeoutsRef = useRef<Map<string, number>>(new Map());
   const screenTrackEndCleanupRef = useRef<(() => void) | null>(null);
   const [connectionRevision, setConnectionRevision] = useState(0);
@@ -267,6 +295,7 @@ export function useVideoRoom(
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isHost, setIsHost] = useState(false);
   const [isRoomLocked, setIsRoomLocked] = useState(false);
+  const [isWaitingForApproval, setIsWaitingForApproval] = useState(false);
 
   const localParticipant = room?.localParticipant ?? null;
   const remoteParticipant = remoteParticipants[0] ?? null;
@@ -660,23 +689,63 @@ export function useVideoRoom(
         setError(null);
         setConnectionState(ConnectionState.Connecting);
 
-        const tokenResponse = await fetch("/api/livekit-token", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            roomName,
-            displayName,
-            roomPassword,
-            roomAccessMode,
-            hostKey,
-          }),
-        });
-        const tokenData = await readTokenResponse(tokenResponse);
+        const requestToken = (admissionRequestId = "") =>
+          fetch("/api/livekit-token", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              roomName,
+              displayName,
+              roomPassword,
+              roomAccessMode,
+              hostKey,
+              admissionRequestId,
+              waitingRoomEnabled,
+            }),
+          });
+        let tokenResponse = await requestToken();
+        let tokenData = await readTokenResponse(tokenResponse);
+
+        if (tokenResponse.status === 202 && tokenData.status === "waiting" && tokenData.requestId) {
+          waitingRequestIdRef.current = tokenData.requestId;
+          setIsWaitingForApproval(true);
+          setIsConnecting(false);
+
+          let approvalStatus: WaitingRoomStatusResponse["status"] = "pending";
+
+          while (isMounted && connectionIdRef.current === connectionId && approvalStatus === "pending") {
+            await new Promise<void>((resolve) => window.setTimeout(resolve, 1800));
+
+            if (!isMounted || connectionIdRef.current !== connectionId) {
+              return;
+            }
+
+            approvalStatus = await readWaitingRoomStatus(roomName, tokenData.requestId);
+          }
+
+          if (approvalStatus === "denied") {
+            throw new Error("The host did not admit this request.");
+          }
+
+          if (!isMounted || connectionIdRef.current !== connectionId) {
+            return;
+          }
+
+          setIsWaitingForApproval(false);
+          waitingRequestIdRef.current = "";
+          setIsConnecting(true);
+          tokenResponse = await requestToken(tokenData.requestId);
+          tokenData = await readTokenResponse(tokenResponse);
+        }
 
         if (!tokenResponse.ok || tokenData.error) {
           throw new Error(tokenData.error || "Failed to create room token.");
+        }
+
+        if (!tokenData.token || !tokenData.url) {
+          throw new Error("Failed to create room token.");
         }
 
         if (!isMounted || connectionIdRef.current !== connectionId) {
@@ -759,6 +828,8 @@ export function useVideoRoom(
           }
           setRoom(null);
           setIsHost(false);
+          setIsWaitingForApproval(false);
+          waitingRequestIdRef.current = "";
           setConnectionState(ConnectionState.Disconnected);
           setConnectionQuality(ConnectionQuality.Unknown);
         }
@@ -798,6 +869,7 @@ export function useVideoRoom(
     roomPassword,
     roomAccessMode,
     hostKey,
+    waitingRoomEnabled,
     connectionRevision,
     updateParticipants,
     addParticipantNotice,
@@ -826,6 +898,22 @@ export function useVideoRoom(
       });
     }
   }, [isMicEnabled, updateParticipants]);
+
+  const cancelWaitingRoomRequest = useCallback(async () => {
+    const requestId = waitingRequestIdRef.current;
+
+    if (!requestId) {
+      return;
+    }
+
+    waitingRequestIdRef.current = "";
+    setIsWaitingForApproval(false);
+
+    await fetch(
+      `/api/waiting-room?roomName=${encodeURIComponent(roomName)}&requestId=${encodeURIComponent(requestId)}`,
+      { method: "DELETE", keepalive: true },
+    ).catch(() => undefined);
+  }, [roomName]);
 
   const toggleCamera = useCallback(async () => {
     const currentRoom = roomRef.current;
@@ -1010,6 +1098,8 @@ export function useVideoRoom(
       isHost,
       isRoomLocked,
       setIsRoomLocked,
+      isWaitingForApproval,
+      cancelWaitingRoomRequest,
       hasRemoteParticipant: remoteParticipants.length > 0,
       participantNotices,
       chatMessages,
@@ -1038,6 +1128,8 @@ export function useVideoRoom(
       isScreenSharing,
       isHost,
       isRoomLocked,
+      isWaitingForApproval,
+      cancelWaitingRoomRequest,
       remoteParticipants.length,
       participantNotices,
       chatMessages,

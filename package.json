@@ -9,6 +9,8 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "better-sqlite3": "^12.11.1",
     "livekit-client": "^2.17.0",
     "livekit-server-sdk": "^2.14.0",
     "lucide-react": "^0.468.0",

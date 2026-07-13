@@ -19,9 +19,16 @@ The app needs a LiveKit project before real video calls can connect.
 LIVEKIT_API_KEY=your_api_key
 LIVEKIT_API_SECRET=your_api_secret
 LIVEKIT_URL=wss://your-project.livekit.cloud
+ROOM_DATABASE_PATH=data/summit-video.db
 ```
 
 6. Restart the dev server after saving `.env`.
+
+## Persistent Room Settings
+
+Room passwords, host ownership, room lock state, waiting-room preferences, and pending approval requests are stored in a local SQLite database by default at `data/summit-video.db`. The database file is ignored by Git.
+
+Set `ROOM_DATABASE_PATH` when you want the database in a different persistent location. For production deployment, point it at durable storage or replace this local SQLite layer with a managed database.
 
 ## Run Locally
 
@@ -56,7 +63,6 @@ Included:
 Not included yet:
 
 - Accounts
-- Database
 - Chat
 - Screen sharing
 - Whiteboard

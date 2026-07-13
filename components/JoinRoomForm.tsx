@@ -13,6 +13,7 @@ import {
   getRoomAccessModeStorageKey,
   getRoomHostKeyStorageKey,
   getRoomPasswordStorageKey,
+  getRoomWaitingRoomStorageKey,
   isValidRoomPassword,
   normalizeRoomPassword,
   RoomAccessMode,
@@ -24,6 +25,7 @@ export function JoinRoomForm() {
   const [roomName, setRoomName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [isPasswordProtected, setIsPasswordProtected] = useState(false);
+  const [requiresHostApproval, setRequiresHostApproval] = useState(false);
   const [roomPassword, setRoomPassword] = useState("");
   const [error, setError] = useState("");
   const [copyStatus, setCopyStatus] = useState("Copy room link");
@@ -78,9 +80,16 @@ export function JoinRoomForm() {
     );
 
     if (nextAccessMode === "create") {
+      const hostKey = createRoomHostKey();
+
       window.sessionStorage.setItem(
         getRoomHostKeyStorageKey(normalized),
-        createRoomHostKey(),
+        hostKey,
+      );
+      window.localStorage.setItem(getRoomHostKeyStorageKey(normalized), hostKey);
+      window.sessionStorage.setItem(
+        getRoomWaitingRoomStorageKey(normalized),
+        requiresHostApproval ? "true" : "false",
       );
     }
 
@@ -164,17 +173,30 @@ export function JoinRoomForm() {
         }}
       />
       {accessMode === "create" ? (
-        <label className="password-toggle">
-          <input
-            checked={isPasswordProtected}
-            type="checkbox"
-            onChange={(event) => {
-              setIsPasswordProtected(event.target.checked);
-              setError("");
-            }}
-          />
-          Require a room password
-        </label>
+        <>
+          <label className="password-toggle">
+            <input
+              checked={isPasswordProtected}
+              type="checkbox"
+              onChange={(event) => {
+                setIsPasswordProtected(event.target.checked);
+                setError("");
+              }}
+            />
+            Require a room password
+          </label>
+          <label className="password-toggle">
+            <input
+              checked={requiresHostApproval}
+              type="checkbox"
+              onChange={(event) => {
+                setRequiresHostApproval(event.target.checked);
+                setError("");
+              }}
+            />
+            Approve participants before they join
+          </label>
+        </>
       ) : null}
       {accessMode === "join" || isPasswordProtected ? (
         <>
@@ -205,6 +227,9 @@ export function JoinRoomForm() {
           Room code: <strong>{normalizedRoomName}</strong>
           {accessMode === "create" && isPasswordProtected ? (
             <span> Password protected</span>
+          ) : null}
+          {accessMode === "create" && requiresHostApproval ? (
+            <span> Host approval required</span>
           ) : null}
         </p>
       ) : null}

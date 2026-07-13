@@ -16,8 +16,49 @@ export type RoomAccessMetadata = {
   };
   settings?: {
     locked?: boolean;
+    waitingRoomEnabled?: boolean;
+  };
+  waitingRoom?: {
+    requests?: WaitingRoomRequest[];
   };
 };
+
+export type WaitingRoomRequest = {
+  id: string;
+  displayName: string;
+  createdAt: number;
+  status: "pending" | "admitted" | "denied";
+};
+
+const waitingRoomRequestLifetimeMs = 2 * 60 * 60 * 1000;
+
+export function getWaitingRoomRequests(metadata: RoomAccessMetadata) {
+  const now = Date.now();
+
+  return (metadata.waitingRoom?.requests ?? []).filter(
+    (request): request is WaitingRoomRequest =>
+      typeof request?.id === "string" &&
+      typeof request.displayName === "string" &&
+      typeof request.createdAt === "number" &&
+      (request.status === "pending" ||
+        request.status === "admitted" ||
+        request.status === "denied") &&
+      now - request.createdAt < waitingRoomRequestLifetimeMs,
+  );
+}
+
+export function withWaitingRoomRequests(
+  metadata: RoomAccessMetadata,
+  requests: WaitingRoomRequest[],
+): RoomAccessMetadata {
+  return {
+    ...metadata,
+    waitingRoom: {
+      ...metadata.waitingRoom,
+      requests,
+    },
+  };
+}
 
 export function createSecretHash(secret: string, salt: string) {
   return createHash("sha256").update(`${salt}:${secret}`).digest("hex");

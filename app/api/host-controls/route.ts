@@ -7,11 +7,18 @@ import {
   readRoomAccessMetadata,
   verifyHostKey,
 } from "@/lib/serverRoomAccess";
+import {
+  getOrMigrateRoomSettings,
+  getWaitingRoomRequestsForRoom,
+  setRoomLocked,
+  setWaitingRoomRequestStatus,
+  toRoomAccessMetadata,
+} from "@/lib/roomDatabase";
 
 const missingEnvMessage =
   "LiveKit is not configured. Set LIVEKIT_API_KEY, LIVEKIT_API_SECRET, and LIVEKIT_URL.";
 
-type HostAction = "lock" | "remove" | "mute";
+type HostAction = "lock" | "remove" | "mute" | "admit" | "deny" | "waiting";
 
 function toRoomServiceUrl(livekitUrl: string) {
   return livekitUrl.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
@@ -29,7 +36,12 @@ function readStringField(body: unknown, fieldName: string) {
 function readHostAction(body: unknown): HostAction | "" {
   const action = readStringField(body, "action");
 
-  return action === "lock" || action === "remove" || action === "mute"
+  return action === "lock" ||
+    action === "remove" ||
+    action === "mute" ||
+    action === "admit" ||
+    action === "deny" ||
+    action === "waiting"
     ? action
     : "";
 }
@@ -84,7 +96,10 @@ export async function POST(request: Request) {
     );
   }
 
-  if ((action === "remove" || action === "mute") && !targetIdentity) {
+  if (
+    (action === "remove" || action === "mute" || action === "admit" || action === "deny") &&
+    !targetIdentity
+  ) {
     return NextResponse.json(
       { error: "Choose a participant first." },
       { status: 400 },
@@ -104,7 +119,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Room not found." }, { status: 404 });
     }
 
-    const metadata = readRoomAccessMetadata(room.metadata);
+    const storedSettings = getOrMigrateRoomSettings(
+      roomName,
+      readRoomAccessMetadata(room.metadata),
+    );
+
+    if (!storedSettings) {
+      throw new Error("Unable to load the saved room settings.");
+    }
+
+    const metadata = toRoomAccessMetadata(storedSettings);
 
     if (!verifyHostKey(hostKey, metadata)) {
       return NextResponse.json(
@@ -114,15 +138,7 @@ export async function POST(request: Request) {
     }
 
     if (action === "lock") {
-      const nextMetadata = {
-        ...metadata,
-        settings: {
-          ...metadata.settings,
-          locked,
-        },
-      };
-
-      await roomService.updateRoomMetadata(roomName, JSON.stringify(nextMetadata));
+      setRoomLocked(roomName, locked);
 
       return NextResponse.json({
         locked,
@@ -130,10 +146,47 @@ export async function POST(request: Request) {
       });
     }
 
+    if (action === "waiting") {
+      return NextResponse.json({
+        requests: getWaitingRoomRequestsForRoom(roomName)
+          .filter((request) => request.status === "pending")
+          .map((request) => ({ id: request.id, label: request.displayName })),
+      });
+    }
+
     if (action === "remove") {
       await roomService.removeParticipant(roomName, targetIdentity);
 
       return NextResponse.json({ message: "Participant removed." });
+    }
+
+    if (action === "admit" || action === "deny") {
+      const requests = getWaitingRoomRequestsForRoom(roomName);
+      const request = requests.find((item) => item.id === targetIdentity);
+
+      if (!request || request.status !== "pending") {
+        return NextResponse.json(
+          { error: "This waiting-room request is no longer available." },
+          { status: 404 },
+        );
+      }
+
+      const wasUpdated = setWaitingRoomRequestStatus(
+        roomName,
+        targetIdentity,
+        action === "admit" ? "admitted" : "denied",
+      );
+
+      if (!wasUpdated) {
+        return NextResponse.json(
+          { error: "This waiting-room request is no longer available." },
+          { status: 404 },
+        );
+      }
+
+      return NextResponse.json({
+        message: action === "admit" ? "Participant admitted." : "Participant declined.",
+      });
     }
 
     const participant = await roomService.getParticipant(roomName, targetIdentity);
