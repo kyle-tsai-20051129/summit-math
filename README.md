@@ -20,6 +20,7 @@ LIVEKIT_API_KEY=your_api_key
 LIVEKIT_API_SECRET=your_api_secret
 LIVEKIT_URL=wss://your-project.livekit.cloud
 ROOM_DATABASE_PATH=data/summit-video.db
+ROOM_EMPTY_TTL_HOURS=24
 ```
 
 6. Restart the dev server after saving `.env`.
@@ -29,6 +30,8 @@ ROOM_DATABASE_PATH=data/summit-video.db
 Room passwords, host ownership, room lock state, waiting-room preferences, and pending approval requests are stored in a local SQLite database by default at `data/summit-video.db`. The database file is ignored by Git.
 
 Set `ROOM_DATABASE_PATH` when you want the database in a different persistent location. For production deployment, point it at durable storage or replace this local SQLite layer with a managed database.
+
+Empty rooms are automatically removed with their saved password, host, and waiting-room settings after `ROOM_EMPTY_TTL_HOURS` of inactivity (24 hours by default). Active rooms are preserved. Cleanup runs during normal room requests, at most once every five minutes per server process.
 
 ## Run Locally
 

@@ -755,7 +755,8 @@ export function useVideoRoom(
               roomAccessMode,
               hostKey,
               admissionRequestId,
-              waitingRoomEnabled,
+              waitingRoomEnabled:
+                roomAccessMode === "create" && waitingRoomEnabled,
             }),
           });
         let tokenResponse = await requestToken();

@@ -1,6 +1,8 @@
 import { RoomServiceClient } from "livekit-server-sdk";
 import { NextResponse } from "next/server";
 import { isValidRoomName } from "@/lib/room";
+import { touchRoomActivity } from "@/lib/roomDatabase";
+import { maybeCleanupExpiredRooms } from "@/lib/roomCleanup";
 
 const missingEnvMessage =
   "LiveKit is not configured. Set LIVEKIT_API_KEY, LIVEKIT_API_SECRET, and LIVEKIT_URL.";
@@ -37,6 +39,7 @@ export async function GET(request: Request) {
       apiKey,
       apiSecret,
     );
+    await maybeCleanupExpiredRooms(apiKey, apiSecret, livekitUrl);
     const rooms = await roomService.listRooms([roomName]);
 
     if (rooms.length === 0) {
@@ -47,6 +50,10 @@ export async function GET(request: Request) {
     }
 
     const participants = await roomService.listParticipants(roomName);
+
+    if (participants.length > 0) {
+      touchRoomActivity(roomName);
+    }
 
     return NextResponse.json({
       participantCount: participants.length,

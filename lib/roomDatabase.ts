@@ -14,6 +14,7 @@ type RoomRow = {
   host_key_hash: string | null;
   locked: number;
   waiting_room_enabled: number;
+  last_active_at: number;
 };
 
 type WaitingRoomRow = {
@@ -59,7 +60,8 @@ function getDatabase() {
       locked INTEGER NOT NULL DEFAULT 0,
       waiting_room_enabled INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
+      updated_at INTEGER NOT NULL,
+      last_active_at INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS waiting_room_requests (
       request_id TEXT PRIMARY KEY,
@@ -72,6 +74,17 @@ function getDatabase() {
     CREATE INDEX IF NOT EXISTS waiting_room_requests_room_name_idx
       ON waiting_room_requests(room_name, created_at);
   `);
+
+  // Existing installations created before expiration support need this migration.
+  const columns = database
+    .prepare("PRAGMA table_info(room_settings)")
+    .all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === "last_active_at")) {
+    database.exec("ALTER TABLE room_settings ADD COLUMN last_active_at INTEGER");
+    database.exec(
+      "UPDATE room_settings SET last_active_at = updated_at WHERE last_active_at IS NULL",
+    );
+  }
 
   return database;
 }
@@ -109,8 +122,8 @@ export function createRoomSettings(
     .prepare(
       `INSERT OR IGNORE INTO room_settings (
         room_name, password_salt, password_hash, host_salt, host_key_hash,
-        locked, waiting_room_enabled, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        locked, waiting_room_enabled, created_at, updated_at, last_active_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       roomName,
@@ -120,6 +133,7 @@ export function createRoomSettings(
       metadata.host?.keyHash ?? null,
       metadata.settings?.locked ? 1 : 0,
       metadata.settings?.waitingRoomEnabled ? 1 : 0,
+      now,
       now,
       now,
     );
@@ -149,6 +163,29 @@ export function setRoomLocked(roomName: string, locked: boolean) {
   getDatabase()
     .prepare("UPDATE room_settings SET locked = ?, updated_at = ? WHERE room_name = ?")
     .run(locked ? 1 : 0, Date.now(), roomName);
+}
+
+export function touchRoomActivity(roomName: string) {
+  const now = Date.now();
+  getDatabase()
+    .prepare(
+      "UPDATE room_settings SET updated_at = ?, last_active_at = ? WHERE room_name = ?",
+    )
+    .run(now, now, roomName);
+}
+
+export function getRoomNamesInactiveSince(cutoff: number) {
+  const rows = getDatabase()
+    .prepare("SELECT room_name FROM room_settings WHERE last_active_at < ?")
+    .all(cutoff) as Array<{ room_name: string }>;
+
+  return rows.map((row) => row.room_name);
+}
+
+export function deleteRoomSettings(roomName: string) {
+  getDatabase()
+    .prepare("DELETE FROM room_settings WHERE room_name = ?")
+    .run(roomName);
 }
 
 function removeExpiredWaitingRequests(roomName: string) {

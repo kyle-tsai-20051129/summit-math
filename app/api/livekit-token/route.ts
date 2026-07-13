@@ -20,8 +20,10 @@ import {
   createWaitingRoomRequest,
   getOrMigrateRoomSettings,
   getWaitingRoomRequestsForRoom,
+  touchRoomActivity,
   toRoomAccessMetadata,
 } from "@/lib/roomDatabase";
+import { maybeCleanupExpiredRooms } from "@/lib/roomCleanup";
 
 const missingEnvMessage =
   "LiveKit is not configured. Set LIVEKIT_API_KEY, LIVEKIT_API_SECRET, and LIVEKIT_URL.";
@@ -140,6 +142,7 @@ export async function POST(request: Request) {
       apiKey,
       apiSecret,
     );
+    await maybeCleanupExpiredRooms(apiKey, apiSecret, livekitUrl);
     const rooms = await roomService.listRooms([roomName]);
     const existingRoom = rooms[0];
 
@@ -239,6 +242,10 @@ export async function POST(request: Request) {
     }
 
     const participants = await roomService.listParticipants(roomName);
+
+    if (participants.length > 0) {
+      touchRoomActivity(roomName);
+    }
 
     if (participants.length >= maxParticipants) {
       return NextResponse.json(

@@ -91,6 +91,9 @@ export function JoinRoomForm() {
         getRoomWaitingRoomStorageKey(normalized),
         requiresHostApproval ? "true" : "false",
       );
+    } else {
+      // Approval is a room-creation setting, never a preference carried into joins.
+      window.sessionStorage.removeItem(getRoomWaitingRoomStorageKey(normalized));
     }
 
     if (shouldUsePassword && normalizedPassword) {

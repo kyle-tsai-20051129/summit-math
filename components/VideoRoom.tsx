@@ -97,17 +97,26 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
       setRoomPassword(normalizeRoomPassword(storedRoomPassword));
     }
 
-    if (storedAccessMode && isRoomAccessMode(storedAccessMode)) {
-      setRoomAccessMode(storedAccessMode);
-      window.sessionStorage.removeItem(getRoomAccessModeStorageKey(roomName));
+    const nextRoomAccessMode =
+      storedAccessMode && isRoomAccessMode(storedAccessMode)
+        ? storedAccessMode
+        : "join";
+
+    if (nextRoomAccessMode === "create") {
+      setRoomAccessMode(nextRoomAccessMode);
     }
+    window.sessionStorage.removeItem(getRoomAccessModeStorageKey(roomName));
 
     if (storedHostKey) {
       setHostKey(storedHostKey);
       window.sessionStorage.setItem(hostKeyStorageKey, storedHostKey);
     }
 
-    setWaitingRoomEnabled(storedWaitingRoomEnabled === "true");
+    // This setting only applies to the immediately preceding Create-room flow.
+    setWaitingRoomEnabled(
+      nextRoomAccessMode === "create" && storedWaitingRoomEnabled === "true",
+    );
+    window.sessionStorage.removeItem(getRoomWaitingRoomStorageKey(roomName));
   }, [isValid, roomName]);
 
   function saveDisplayName(event: FormEvent<HTMLFormElement>) {
