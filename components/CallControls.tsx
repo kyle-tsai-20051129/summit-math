@@ -5,6 +5,7 @@ import {
   Mic,
   MicOff,
   MonitorUp,
+  MonitorX,
   PhoneOff,
   Video,
   VideoOff,
@@ -14,12 +15,16 @@ type CallControlsProps = {
   isMicEnabled: boolean;
   isCameraEnabled: boolean;
   isScreenSharing: boolean;
+  activeScreenShareLabel: string | null;
+  isActiveScreenShareLocal: boolean;
+  hasRemoteScreenShare: boolean;
   isChatOpen: boolean;
   unreadChatCount: number;
   isDisabled: boolean;
   onToggleMicrophone: () => void;
   onToggleCamera: () => void;
   onToggleScreenShare: () => void;
+  onStopScreenShare: () => void;
   onToggleChat: () => void;
   onLeave: () => void;
 };
@@ -28,17 +33,49 @@ export function CallControls({
   isMicEnabled,
   isCameraEnabled,
   isScreenSharing,
+  activeScreenShareLabel,
+  isActiveScreenShareLocal,
+  hasRemoteScreenShare,
   isChatOpen,
   unreadChatCount,
   isDisabled,
   onToggleMicrophone,
   onToggleCamera,
   onToggleScreenShare,
+  onStopScreenShare,
   onToggleChat,
   onLeave,
 }: CallControlsProps) {
+  const activeShareOwner = activeScreenShareLabel?.replace(/ is sharing$/, "") ?? "Another participant";
+
   return (
-    <nav className="call-controls" aria-label="Call controls">
+    <div className="call-controls-shell">
+      {activeScreenShareLabel ? (
+        <div className="screen-share-control-banner" role="status">
+          <MonitorUp aria-hidden="true" />
+          <div>
+            <strong>
+              {isScreenSharing ? "You are sharing" : activeScreenShareLabel}
+            </strong>
+            <span>
+              {isScreenSharing && !isActiveScreenShareLocal
+                ? `${activeShareOwner}'s shared screen is on stage. Your screen is still shared.`
+                : isScreenSharing
+                  ? "Your screen is visible to everyone in this call."
+                  : hasRemoteScreenShare
+                    ? "Their shared screen is on stage."
+                    : "Shared screen is active."}
+            </span>
+          </div>
+          {isScreenSharing ? (
+            <button type="button" onClick={onStopScreenShare} title="Stop sharing screen">
+              <MonitorX aria-hidden="true" />
+              Stop sharing
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      <nav className="call-controls" aria-label="Call controls">
       <button
         type="button"
         className={`control-button ${isMicEnabled ? "" : "control-off"}`}
@@ -105,6 +142,7 @@ export function CallControls({
         <PhoneOff aria-hidden="true" />
         <span>End</span>
       </button>
-    </nav>
+      </nav>
+    </div>
   );
 }

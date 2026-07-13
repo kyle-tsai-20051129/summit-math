@@ -24,6 +24,7 @@ type TokenResponse = {
   identity?: string;
   isHost?: boolean;
   isRoomLocked?: boolean;
+  isPasswordProtected?: boolean;
   status?: "waiting";
   requestId?: string;
   error?: string;
@@ -295,6 +296,7 @@ export function useVideoRoom(
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isHost, setIsHost] = useState(false);
   const [isRoomLocked, setIsRoomLocked] = useState(false);
+  const [isPasswordProtected, setIsPasswordProtected] = useState(false);
   const [isWaitingForApproval, setIsWaitingForApproval] = useState(false);
 
   const localParticipant = room?.localParticipant ?? null;
@@ -327,6 +329,11 @@ export function useVideoRoom(
         isLocal: activeScreenShare.identity === localParticipant?.identity,
       }
     : null;
+  const hasRemoteScreenShare = allParticipants.some(
+    (participant) =>
+      participant.identity !== localParticipant?.identity &&
+      getEnabledState(participant, Track.Source.ScreenShare),
+  );
 
   const updateParticipants = useCallback(() => {
     const currentRoom = roomRef.current;
@@ -566,8 +573,16 @@ export function useVideoRoom(
 
       rememberScreenShareOwner(participant);
       if (hasCompletedInitialSync) {
+        const localParticipantIsSharing = getEnabledState(
+          nextRoom.localParticipant,
+          Track.Source.ScreenShare,
+        );
         addParticipantNotice(
-          `${getParticipantNoticeName(participant)} started sharing`,
+          participant.identity === nextRoom.localParticipant.identity
+            ? "You started sharing"
+            : `${getParticipantNoticeName(participant)} started sharing${
+                localParticipantIsSharing ? ". Their screen is now on stage." : ""
+              }`,
         );
       }
 
@@ -812,6 +827,7 @@ export function useVideoRoom(
         setRoom(nextRoom);
         setIsHost(Boolean(tokenData.isHost));
         setIsRoomLocked(Boolean(tokenData.isRoomLocked));
+        setIsPasswordProtected(Boolean(tokenData.isPasswordProtected));
         setConnectionQuality(nextRoom.localParticipant.connectionQuality);
         syncRoomState();
         hasCompletedInitialSync = true;
@@ -828,6 +844,7 @@ export function useVideoRoom(
           }
           setRoom(null);
           setIsHost(false);
+          setIsPasswordProtected(false);
           setIsWaitingForApproval(false);
           waitingRequestIdRef.current = "";
           setConnectionState(ConnectionState.Disconnected);
@@ -1088,6 +1105,7 @@ export function useVideoRoom(
       remoteParticipant,
       remoteParticipants: visibleRemoteParticipants,
       activeScreenShare: activeScreenShareDetails,
+      hasRemoteScreenShare,
       connectionState,
       connectionQuality,
       error,
@@ -1097,6 +1115,7 @@ export function useVideoRoom(
       isScreenSharing,
       isHost,
       isRoomLocked,
+      isPasswordProtected,
       setIsRoomLocked,
       isWaitingForApproval,
       cancelWaitingRoomRequest,
@@ -1119,6 +1138,7 @@ export function useVideoRoom(
       remoteParticipant,
       visibleRemoteParticipants,
       activeScreenShareDetails,
+      hasRemoteScreenShare,
       connectionState,
       connectionQuality,
       error,
@@ -1128,6 +1148,7 @@ export function useVideoRoom(
       isScreenSharing,
       isHost,
       isRoomLocked,
+      isPasswordProtected,
       isWaitingForApproval,
       cancelWaitingRoomRequest,
       remoteParticipants.length,

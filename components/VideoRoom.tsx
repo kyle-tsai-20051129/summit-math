@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, Loader2, ShieldCheck } from "lucide-react";
+import { Copy, Loader2, Send, ShieldCheck, UsersRound } from "lucide-react";
 import { Track } from "livekit-client";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -15,6 +15,11 @@ import {
   getCallConnectionStatus,
 } from "@/components/ConnectionStatus";
 import { JoinMediaSettings, JoinPreview } from "@/components/JoinPreview";
+import { MeetingInvitePanel } from "@/components/MeetingInvitePanel";
+import {
+  CallParticipantStatus,
+  ParticipantListPanel,
+} from "@/components/ParticipantListPanel";
 import { ParticipantVideo } from "@/components/ParticipantVideo";
 import { ScreenShareStage } from "@/components/ScreenShareStage";
 import { useVideoRoom } from "@/hooks/useVideoRoom";
@@ -218,7 +223,11 @@ function VideoRoomCall({
     hostKey,
     waitingRoomEnabled,
   );
-  const [copyStatus, setCopyStatus] = useState("Copy link");
+  const [isInvitePanelOpen, setIsInvitePanelOpen] = useState(false);
+  const [isParticipantListOpen, setIsParticipantListOpen] = useState(false);
+  const [inviteCopyStatus, setInviteCopyStatus] = useState<
+    "link" | "code" | "password" | "invite" | ""
+  >("");
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isHostPanelOpen, setIsHostPanelOpen] = useState(false);
   const [isHostActionBusy, setIsHostActionBusy] = useState(false);
@@ -267,6 +276,26 @@ function VideoRoomCall({
       )?.isMuted,
     }),
   );
+  const participantStatuses: CallParticipantStatus[] = callParticipants.map(
+    (callParticipant) => ({
+      id: callParticipant.id,
+      label: callParticipant.label,
+      isLocal: callParticipant.isLocal,
+      isHost:
+        callParticipant.isLocal
+          ? videoRoom.isHost
+          : isHostParticipant(callParticipant.participant.metadata ?? ""),
+      isMicrophoneEnabled: !callParticipant.participant.getTrackPublication(
+        Track.Source.Microphone,
+      )?.isMuted,
+      isCameraEnabled: !callParticipant.participant.getTrackPublication(
+        Track.Source.Camera,
+      )?.isMuted,
+      connectionQuality: callParticipant.isLocal
+        ? videoRoom.connectionQuality
+        : callParticipant.participant.connectionQuality,
+    }),
+  );
 
   function leaveRoom() {
     void videoRoom.cancelWaitingRoomRequest();
@@ -286,10 +315,31 @@ function VideoRoomCall({
     });
   }
 
-  async function copyRoomLink() {
-    await copyText(getRoomUrl(roomName));
-    setCopyStatus("Copied");
-    window.setTimeout(() => setCopyStatus("Copy link"), 1600);
+  async function copyInviteValue(
+    value: string,
+    status: "link" | "code" | "password" | "invite",
+  ) {
+    await copyText(value);
+    setInviteCopyStatus(status);
+    window.setTimeout(() => setInviteCopyStatus(""), 1600);
+  }
+
+  function getInvitationText() {
+    const lines = [
+      "Join my Summit Video call",
+      `Room code: ${roomName}`,
+      `Room link: ${getRoomUrl(roomName)}`,
+    ];
+
+    if (videoRoom.isPasswordProtected) {
+      lines.push(
+        videoRoom.isHost && roomPassword
+          ? `Password: ${roomPassword}`
+          : "Password: Ask the host for the room password.",
+      );
+    }
+
+    return lines.join("\n");
   }
 
   async function runHostAction(
@@ -538,15 +588,45 @@ function VideoRoomCall({
           </button>
         ) : null}
         <button
-          className="topbar-copy-button"
+          className="topbar-copy-button people-topbar-button"
           type="button"
-          onClick={copyRoomLink}
-          title="Copy room link"
+          onClick={() => setIsParticipantListOpen((isOpen) => !isOpen)}
+          title="People in this call"
         >
-          <Copy aria-hidden="true" size={16} />
-          {copyStatus}
+          <UsersRound aria-hidden="true" size={16} />
+          People
+        </button>
+        <button
+          className="topbar-copy-button invite-topbar-button"
+          type="button"
+          onClick={() => setIsInvitePanelOpen(true)}
+          title="Invite participants"
+        >
+          <Send aria-hidden="true" size={16} />
+          Invite
         </button>
       </header>
+
+      <MeetingInvitePanel
+        isOpen={isInvitePanelOpen}
+        roomCode={roomName}
+        roomLink={getRoomUrl(roomName)}
+        isPasswordProtected={videoRoom.isPasswordProtected}
+        password={roomPassword}
+        canSharePassword={videoRoom.isHost && Boolean(roomPassword)}
+        copyStatus={inviteCopyStatus}
+        onClose={() => setIsInvitePanelOpen(false)}
+        onCopyLink={() => void copyInviteValue(getRoomUrl(roomName), "link")}
+        onCopyCode={() => void copyInviteValue(roomName, "code")}
+        onCopyPassword={() => void copyInviteValue(roomPassword, "password")}
+        onCopyInvite={() => void copyInviteValue(getInvitationText(), "invite")}
+      />
+
+      <ParticipantListPanel
+        isOpen={isParticipantListOpen}
+        participants={participantStatuses}
+        onClose={() => setIsParticipantListOpen(false)}
+      />
 
       {callStatus.showToast ? (
         <div
@@ -699,17 +779,31 @@ function VideoRoomCall({
         isCameraEnabled={videoRoom.isCameraEnabled}
         isMicEnabled={videoRoom.isMicEnabled}
         isScreenSharing={videoRoom.isScreenSharing}
+        activeScreenShareLabel={videoRoom.activeScreenShare?.label ?? null}
+        isActiveScreenShareLocal={Boolean(videoRoom.activeScreenShare?.isLocal)}
+        hasRemoteScreenShare={videoRoom.hasRemoteScreenShare}
         isChatOpen={isChatOpen}
         unreadChatCount={unreadChatCount}
         isDisabled={videoRoom.isConnecting}
         onToggleCamera={videoRoom.toggleCamera}
         onToggleMicrophone={videoRoom.toggleMicrophone}
         onToggleScreenShare={videoRoom.toggleScreenShare}
+        onStopScreenShare={videoRoom.stopScreenShare}
         onToggleChat={toggleChat}
         onLeave={leaveRoom}
       />
     </main>
   );
+}
+
+function isHostParticipant(metadata: string) {
+  try {
+    const value = JSON.parse(metadata) as { role?: unknown };
+
+    return value.role === "host";
+  } catch {
+    return false;
+  }
 }
 
 type RoomPasswordScreenProps = {

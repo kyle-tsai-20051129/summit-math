@@ -132,6 +132,7 @@ export async function POST(request: Request) {
 
   let isHost = false;
   let isRoomLocked = false;
+  let isPasswordProtected = false;
 
   try {
     const roomService = new RoomServiceClient(
@@ -165,6 +166,7 @@ export async function POST(request: Request) {
       const metadata = toRoomAccessMetadata(storedSettings);
       isHost = verifyHostKey(hostKey, metadata);
       isRoomLocked = storedSettings.locked;
+      isPasswordProtected = Boolean(storedSettings.access?.passwordHash);
 
       if (isRoomLocked && !isHost) {
         return NextResponse.json(
@@ -233,6 +235,7 @@ export async function POST(request: Request) {
       });
       createRoomSettings(roomName, roomMetadata);
       isHost = Boolean(hostKey);
+      isPasswordProtected = Boolean(roomPassword);
     }
 
     const participants = await roomService.listParticipants(roomName);
@@ -259,6 +262,7 @@ export async function POST(request: Request) {
   const token = new AccessToken(apiKey, apiSecret, {
     identity,
     name: displayName,
+    metadata: JSON.stringify({ role: isHost ? "host" : "participant" }),
   });
 
   token.addGrant({
@@ -275,5 +279,6 @@ export async function POST(request: Request) {
     identity,
     isHost,
     isRoomLocked,
+    isPasswordProtected,
   });
 }
