@@ -16,11 +16,13 @@ import {
 } from "@/components/ConnectionStatus";
 import { JoinMediaSettings, JoinPreview } from "@/components/JoinPreview";
 import { MeetingInvitePanel } from "@/components/MeetingInvitePanel";
+import { MeetingTimer } from "@/components/MeetingTimer";
 import {
   CallParticipantStatus,
   ParticipantListPanel,
 } from "@/components/ParticipantListPanel";
 import { ParticipantVideo } from "@/components/ParticipantVideo";
+import { ReconnectOverlay } from "@/components/ReconnectOverlay";
 import { ScreenShareStage } from "@/components/ScreenShareStage";
 import { useVideoRoom } from "@/hooks/useVideoRoom";
 import {
@@ -571,6 +573,7 @@ function VideoRoomCall({
         <span className="room-code">
           Room code: <strong>{roomName}</strong>
         </span>
+        <MeetingTimer startedAt={videoRoom.callStartedAt} />
         <ConnectionStatus
           state={videoRoom.connectionState}
           quality={videoRoom.connectionQuality}
@@ -627,6 +630,13 @@ function VideoRoomCall({
         participants={participantStatuses}
         onClose={() => setIsParticipantListOpen(false)}
       />
+
+      {videoRoom.isRecoveringConnection ? (
+        <ReconnectOverlay
+          isRetrying={videoRoom.isRetrying}
+          onRetry={videoRoom.retryConnection}
+        />
+      ) : null}
 
       {callStatus.showToast ? (
         <div

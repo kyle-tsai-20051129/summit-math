@@ -269,6 +269,8 @@ export function useVideoRoom(
   const waitingRequestIdRef = useRef("");
   const noticeTimeoutsRef = useRef<Map<string, number>>(new Map());
   const screenTrackEndCleanupRef = useRef<(() => void) | null>(null);
+  const wasReconnectingRef = useRef(false);
+  const callStartedAtRef = useRef<number | null>(null);
   const [connectionRevision, setConnectionRevision] = useState(0);
   const [room, setRoom] = useState<Room | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>(
@@ -298,6 +300,9 @@ export function useVideoRoom(
   const [isRoomLocked, setIsRoomLocked] = useState(false);
   const [isPasswordProtected, setIsPasswordProtected] = useState(false);
   const [isWaitingForApproval, setIsWaitingForApproval] = useState(false);
+  const [isRecoveringConnection, setIsRecoveringConnection] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [callStartedAt, setCallStartedAt] = useState<number | null>(null);
 
   const localParticipant = room?.localParticipant ?? null;
   const remoteParticipant = remoteParticipants[0] ?? null;
@@ -463,6 +468,11 @@ export function useVideoRoom(
     setConnectionQuality(ConnectionQuality.Unknown);
     setIsScreenSharing(false);
     setScreenShareOwners([]);
+    setIsRecoveringConnection(false);
+    setIsRetrying(false);
+    callStartedAtRef.current = null;
+    setCallStartedAt(null);
+    wasReconnectingRef.current = false;
   }, []);
 
   useEffect(() => {
@@ -472,6 +482,7 @@ export function useVideoRoom(
     let staleRoomChecks = 0;
     let isCheckingRoomState = false;
     let hasCompletedInitialSync = false;
+    let hasConnectedForCurrentConnection = false;
     const connectionId = connectionIdRef.current + 1;
     connectionIdRef.current = connectionId;
     const nextRoom = new Room({
@@ -500,6 +511,22 @@ export function useVideoRoom(
         return;
       }
 
+      const didRecover = wasReconnectingRef.current;
+
+      hasConnectedForCurrentConnection = true;
+      if (!callStartedAtRef.current) {
+        const startTime = Date.now();
+
+        callStartedAtRef.current = startTime;
+        setCallStartedAt(startTime);
+      }
+      setIsRecoveringConnection(false);
+      setIsRetrying(false);
+      wasReconnectingRef.current = false;
+      if (didRecover) {
+        addParticipantNotice("You're back online.");
+      }
+
       syncRoomStateSoon();
     };
 
@@ -510,6 +537,10 @@ export function useVideoRoom(
 
       setConnectionState(ConnectionState.Disconnected);
       setConnectionQuality(ConnectionQuality.Unknown);
+      if (hasConnectedForCurrentConnection) {
+        wasReconnectingRef.current = true;
+        setIsRecoveringConnection(true);
+      }
       syncRoomStateSoon();
     };
 
@@ -519,6 +550,13 @@ export function useVideoRoom(
       }
 
       setConnectionState(state);
+      if (
+        state === ConnectionState.Reconnecting ||
+        state === ConnectionState.SignalReconnecting
+      ) {
+        wasReconnectingRef.current = true;
+        setIsRecoveringConnection(true);
+      }
       syncRoomStateSoon();
     };
 
@@ -846,6 +884,7 @@ export function useVideoRoom(
           setIsHost(false);
           setIsPasswordProtected(false);
           setIsWaitingForApproval(false);
+          setIsRetrying(false);
           waitingRequestIdRef.current = "";
           setConnectionState(ConnectionState.Disconnected);
           setConnectionQuality(ConnectionQuality.Unknown);
@@ -915,6 +954,14 @@ export function useVideoRoom(
       });
     }
   }, [isMicEnabled, updateParticipants]);
+
+  const retryConnection = useCallback(() => {
+    wasReconnectingRef.current = true;
+    setError(null);
+    setIsRecoveringConnection(true);
+    setIsRetrying(true);
+    setConnectionRevision((revision) => revision + 1);
+  }, []);
 
   const cancelWaitingRoomRequest = useCallback(async () => {
     const requestId = waitingRequestIdRef.current;
@@ -1118,6 +1165,9 @@ export function useVideoRoom(
       isPasswordProtected,
       setIsRoomLocked,
       isWaitingForApproval,
+      isRecoveringConnection,
+      isRetrying,
+      callStartedAt,
       cancelWaitingRoomRequest,
       hasRemoteParticipant: remoteParticipants.length > 0,
       participantNotices,
@@ -1127,6 +1177,7 @@ export function useVideoRoom(
       dismissParticipantNotice,
       sendChatMessage,
       toggleMicrophone,
+      retryConnection,
       toggleCamera,
       toggleScreenShare,
       stopScreenShare,
@@ -1150,6 +1201,9 @@ export function useVideoRoom(
       isRoomLocked,
       isPasswordProtected,
       isWaitingForApproval,
+      isRecoveringConnection,
+      isRetrying,
+      callStartedAt,
       cancelWaitingRoomRequest,
       remoteParticipants.length,
       participantNotices,
@@ -1157,6 +1211,7 @@ export function useVideoRoom(
       dismissParticipantNotice,
       sendChatMessage,
       toggleMicrophone,
+      retryConnection,
       toggleCamera,
       toggleScreenShare,
       stopScreenShare,
