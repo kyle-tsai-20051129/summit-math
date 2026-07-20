@@ -55,6 +55,8 @@ New room passwords use a salted `scrypt` hash and are never returned to clients 
 
 Hosts can upload PDFs up to 25 MB from Host controls. In development, when S3 is not configured, uploads are stored locally under `data/lesson-uploads` (or `LESSON_LOCAL_STORAGE_PATH`) so the feature works out of the box. This directory is ignored by Git and is only suitable for local development. In production, PDFs must use the private S3-compatible bucket configured with the `LESSON_S3_*` variables. Allow browser `PUT` requests from the deployed app origin in the bucket's CORS policy.
 
+The host can present an uploaded lesson from Host controls. The active document and page are saved with the room, so every participant sees the same PDF page, including people who join after the lesson is opened. Lesson files stay private: each call receives a short-lived, room-scoped access token for viewing its own materials.
+
 ## Host Recovery
 
 When creating a room, the creator is shown a one-time host recovery key before the device preview. Store it somewhere private. After leaving the host tab or joining from a new browser, use **Recover host access** in the Join room flow and enter that key to regain host controls. The server stores only a hash of the key; normal participants do not receive host access.

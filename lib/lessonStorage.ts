@@ -96,6 +96,29 @@ export async function createLessonUploadUrl(
   );
 }
 
+export async function createLessonReadUrl(objectKey: string) {
+  const { bucket, client } = requireS3LessonStorage();
+
+  return getSignedUrl(
+    client,
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: objectKey,
+      ResponseContentType: "application/pdf",
+      ResponseContentDisposition: "inline",
+    }),
+    { expiresIn: 10 * 60 },
+  );
+}
+
+export async function readLocalLesson(objectKey: string) {
+  if (getLessonStorageMode() !== "local") {
+    throw new Error(lessonStorageConfigurationError);
+  }
+
+  return readFile(getLocalObjectPath(objectKey));
+}
+
 export async function storeLocalLessonUpload(
   objectKey: string,
   content: Uint8Array,

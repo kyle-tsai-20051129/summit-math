@@ -24,6 +24,7 @@ import {
 } from "@/components/ParticipantListPanel";
 import { ParticipantVideo } from "@/components/ParticipantVideo";
 import { ReconnectOverlay } from "@/components/ReconnectOverlay";
+import { LessonStage } from "@/components/LessonStage";
 import { ScreenShareStage } from "@/components/ScreenShareStage";
 import { useVideoRoom } from "@/hooks/useVideoRoom";
 import {
@@ -277,6 +278,10 @@ function VideoRoomCall({
   const [lessons, setLessons] = useState<HostLesson[]>([]);
   const [lessonError, setLessonError] = useState("");
   const [isLessonUploadBusy, setIsLessonUploadBusy] = useState(false);
+  const [activeLesson, setActiveLesson] = useState<{
+    lesson: Pick<HostLesson, "id" | "fileName">;
+    page: number;
+  } | null>(null);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const seenChatMessageCountRef = useRef(0);
   const callStatus = getCallConnectionStatus(
@@ -536,6 +541,37 @@ function VideoRoomCall({
     }
   }
 
+  async function updateLessonPresentation(
+    action: "show" | "page" | "hide",
+    lessonId = activeLesson?.lesson.id ?? "",
+    page = activeLesson?.page ?? 1,
+  ) {
+    if (!videoRoom.isHost || !hostKey) {
+      return;
+    }
+
+    setLessonError("");
+    try {
+      const response = await fetch("/api/lesson-presentation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomName, hostKey, action, lessonId, page }),
+      });
+      const result = (await response.json()) as {
+        presentation?: { lesson: Pick<HostLesson, "id" | "fileName">; page: number } | null;
+        error?: string;
+      };
+      if (!response.ok || result.error) {
+        throw new Error(result.error || "Unable to update the presented lesson.");
+      }
+      setActiveLesson(result.presentation ?? null);
+    } catch (error) {
+      setLessonError(
+        error instanceof Error ? error.message : "Unable to update the presented lesson.",
+      );
+    }
+  }
+
   useEffect(() => {
     const previousMessageCount = seenChatMessageCountRef.current;
     const nextMessages = videoRoom.chatMessages.slice(previousMessageCount);
@@ -603,6 +639,37 @@ function VideoRoomCall({
       active = false;
     };
   }, [hostKey, roomName, videoRoom.isHost]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (!videoRoom.lessonAccessToken) {
+      setActiveLesson(null);
+      return () => {
+        active = false;
+      };
+    }
+
+    const loadPresentation = async () => {
+      const response = await fetch(
+        `/api/lesson-presentation?roomName=${encodeURIComponent(roomName)}&accessToken=${encodeURIComponent(videoRoom.lessonAccessToken)}`,
+        { cache: "no-store" },
+      );
+      const result = (await response.json()) as {
+        presentation?: { lesson: Pick<HostLesson, "id" | "fileName">; page: number } | null;
+      };
+      if (response.ok && active) {
+        setActiveLesson(result.presentation ?? null);
+      }
+    };
+
+    void loadPresentation();
+    const intervalId = window.setInterval(() => void loadPresentation(), 1500);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [roomName, videoRoom.lessonAccessToken]);
 
   useEffect(() => {
     if (!videoRoom.isHost || !hostKey) {
@@ -858,6 +925,7 @@ function VideoRoomCall({
           lessons={lessons}
           lessonError={lessonError}
           isLessonUploadBusy={isLessonUploadBusy}
+          activeLessonId={activeLesson?.lesson.id ?? null}
           onClose={() => setIsHostPanelOpen(false)}
           onToggleLock={() =>
             runHostAction("lock", { locked: !videoRoom.isRoomLocked })
@@ -875,10 +943,39 @@ function VideoRoomCall({
             runHostAction("deny", { targetIdentity })
           }
           onUploadLesson={(file) => void uploadLesson(file)}
+          onPresentLesson={(lessonId) => void updateLessonPresentation("show", lessonId, 1)}
+          onStopPresenting={() => void updateLessonPresentation("hide")}
         />
       ) : null}
 
-      {hasActiveScreenShare && videoRoom.activeScreenShare ? (
+      {activeLesson && videoRoom.lessonAccessToken ? (
+        <section className="call-stage lesson-layout" aria-label="Presented lesson">
+          <LessonStage
+            roomName={roomName}
+            lessonId={activeLesson.lesson.id}
+            lessonName={activeLesson.lesson.fileName}
+            page={activeLesson.page}
+            accessToken={videoRoom.lessonAccessToken}
+            isHost={videoRoom.isHost}
+            onSetPage={(page) => void updateLessonPresentation("page", activeLesson.lesson.id, page)}
+            onStopPresenting={() => void updateLessonPresentation("hide")}
+          />
+          <div className={`screen-share-participant-strip strip-count-${visibleCount || 1}`} aria-label="Participants">
+            {callParticipants.map((callParticipant) => (
+              <ParticipantVideo
+                key={callParticipant.id}
+                participant={callParticipant.participant}
+                label={callParticipant.label}
+                isLocal={callParticipant.isLocal}
+                isMuted={callParticipant.isLocal}
+                audioOutputDeviceId={initialMediaSettings.speakerDeviceId}
+                className="compact-call-tile"
+                placeholder={<span className="participant-avatar compact-avatar">{callParticipant.placeholderLabel}</span>}
+              />
+            ))}
+          </div>
+        </section>
+      ) : hasActiveScreenShare && videoRoom.activeScreenShare ? (
         <section className="call-stage screen-share-layout" aria-label="Video call">
           <ScreenShareStage
             participant={videoRoom.activeScreenShare.participant}

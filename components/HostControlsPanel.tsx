@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, FileText, FileUp, Lock, MicOff, UserMinus, X } from "lucide-react";
+import { Check, FileText, FileUp, Lock, MicOff, Presentation, Square, UserMinus, X } from "lucide-react";
 
 export type HostParticipant = {
   identity: string;
@@ -29,6 +29,7 @@ type HostControlsPanelProps = {
   lessons: HostLesson[];
   lessonError: string;
   isLessonUploadBusy: boolean;
+  activeLessonId: string | null;
   onClose: () => void;
   onToggleLock: () => void;
   onMuteParticipant: (identity: string) => void;
@@ -36,6 +37,8 @@ type HostControlsPanelProps = {
   onAdmitParticipant: (requestId: string) => void;
   onDeclineParticipant: (requestId: string) => void;
   onUploadLesson: (file: File) => void;
+  onPresentLesson: (lessonId: string) => void;
+  onStopPresenting: () => void;
 };
 
 export function HostControlsPanel({
@@ -48,6 +51,7 @@ export function HostControlsPanel({
   lessons,
   lessonError,
   isLessonUploadBusy,
+  activeLessonId,
   onClose,
   onToggleLock,
   onMuteParticipant,
@@ -55,6 +59,8 @@ export function HostControlsPanel({
   onAdmitParticipant,
   onDeclineParticipant,
   onUploadLesson,
+  onPresentLesson,
+  onStopPresenting,
 }: HostControlsPanelProps) {
   if (!isOpen) {
     return null;
@@ -111,11 +117,25 @@ export function HostControlsPanel({
               <FileText aria-hidden="true" />
               <span title={lesson.fileName}>{lesson.fileName}</span>
               <small>{formatLessonSize(lesson.sizeBytes)}</small>
+              <button
+                type="button"
+                className={activeLessonId === lesson.id ? "host-presenting-button" : ""}
+                onClick={() => onPresentLesson(lesson.id)}
+              >
+                <Presentation aria-hidden="true" />
+                {activeLessonId === lesson.id ? "Presenting" : "Present"}
+              </button>
             </div>
           ))
         ) : (
           <p className="host-panel-empty">No PDFs uploaded yet.</p>
         )}
+        {activeLessonId ? (
+          <button type="button" className="host-stop-presenting" onClick={onStopPresenting}>
+            <Square aria-hidden="true" />
+            Stop presenting
+          </button>
+        ) : null}
       </div>
 
       <div className="host-waiting-list">

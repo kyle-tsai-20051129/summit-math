@@ -25,6 +25,7 @@ type TokenResponse = {
   isHost?: boolean;
   isRoomLocked?: boolean;
   isPasswordProtected?: boolean;
+  lessonAccessToken?: string;
   status?: "waiting";
   requestId?: string;
   error?: string;
@@ -299,6 +300,7 @@ export function useVideoRoom(
   const [isHost, setIsHost] = useState(false);
   const [isRoomLocked, setIsRoomLocked] = useState(false);
   const [isPasswordProtected, setIsPasswordProtected] = useState(false);
+  const [lessonAccessToken, setLessonAccessToken] = useState("");
   const [isWaitingForApproval, setIsWaitingForApproval] = useState(false);
   const [isRecoveringConnection, setIsRecoveringConnection] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
@@ -467,6 +469,7 @@ export function useVideoRoom(
     setConnectionState(ConnectionState.Disconnected);
     setConnectionQuality(ConnectionQuality.Unknown);
     setIsScreenSharing(false);
+    setLessonAccessToken("");
     setScreenShareOwners([]);
     setIsRecoveringConnection(false);
     setIsRetrying(false);
@@ -867,6 +870,7 @@ export function useVideoRoom(
         setIsHost(Boolean(tokenData.isHost));
         setIsRoomLocked(Boolean(tokenData.isRoomLocked));
         setIsPasswordProtected(Boolean(tokenData.isPasswordProtected));
+        setLessonAccessToken(tokenData.lessonAccessToken ?? "");
         setConnectionQuality(nextRoom.localParticipant.connectionQuality);
         syncRoomState();
         hasCompletedInitialSync = true;
@@ -884,6 +888,7 @@ export function useVideoRoom(
           setRoom(null);
           setIsHost(false);
           setIsPasswordProtected(false);
+          setLessonAccessToken("");
           setIsWaitingForApproval(false);
           setIsRetrying(false);
           waitingRequestIdRef.current = "";
@@ -1164,6 +1169,7 @@ export function useVideoRoom(
       isHost,
       isRoomLocked,
       isPasswordProtected,
+      lessonAccessToken,
       setIsRoomLocked,
       isWaitingForApproval,
       isRecoveringConnection,
@@ -1201,6 +1207,7 @@ export function useVideoRoom(
       isHost,
       isRoomLocked,
       isPasswordProtected,
+      lessonAccessToken,
       isWaitingForApproval,
       isRecoveringConnection,
       isRetrying,

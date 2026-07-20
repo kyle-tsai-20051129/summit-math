@@ -33,6 +33,7 @@ import {
   checkRateLimit,
   getRequestClientKey,
 } from "@/lib/requestRateLimit";
+import { createLessonAccessToken } from "@/lib/lessonAccessToken";
 
 const maxParticipants = 4;
 
@@ -357,5 +358,6 @@ export async function POST(request: Request) {
     isHost,
     isRoomLocked,
     isPasswordProtected,
+    lessonAccessToken: createLessonAccessToken(roomName, apiSecret),
   });
 }

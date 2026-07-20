@@ -14,6 +14,8 @@ type RoomRow = {
   host_key_hash: string | null;
   locked: number;
   waiting_room_enabled: number;
+  active_lesson_id: string | null;
+  active_lesson_page: number | null;
   last_active_at: number;
 };
 
@@ -48,12 +50,18 @@ export type RoomLesson = {
   createdAt: number;
 };
 
+export type ActiveLessonPresentation = {
+  lessonId: string;
+  page: number;
+};
+
 export type StoredRoomSettings = {
   roomName: string;
   access?: RoomAccessMetadata["access"];
   host?: RoomAccessMetadata["host"];
   locked: boolean;
   waitingRoomEnabled: boolean;
+  activeLessonPresentation?: ActiveLessonPresentation;
 };
 
 const waitingRequestLifetimeMs = 2 * 60 * 60 * 1000;
@@ -83,6 +91,8 @@ function getDatabase() {
       host_key_hash TEXT,
       locked INTEGER NOT NULL DEFAULT 0,
       waiting_room_enabled INTEGER NOT NULL DEFAULT 0,
+      active_lesson_id TEXT,
+      active_lesson_page INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       last_active_at INTEGER NOT NULL
@@ -131,6 +141,13 @@ function getDatabase() {
     );
   }
 
+  if (!columns.some((column) => column.name === "active_lesson_id")) {
+    database.exec("ALTER TABLE room_settings ADD COLUMN active_lesson_id TEXT");
+  }
+  if (!columns.some((column) => column.name === "active_lesson_page")) {
+    database.exec("ALTER TABLE room_settings ADD COLUMN active_lesson_page INTEGER");
+  }
+
   return database;
 }
 
@@ -147,6 +164,10 @@ function toStoredRoomSettings(row: RoomRow): StoredRoomSettings {
         : undefined,
     locked: Boolean(row.locked),
     waitingRoomEnabled: Boolean(row.waiting_room_enabled),
+    activeLessonPresentation:
+      row.active_lesson_id && row.active_lesson_page
+        ? { lessonId: row.active_lesson_id, page: row.active_lesson_page }
+        : undefined,
   };
 }
 
@@ -389,6 +410,50 @@ export function getRoomLessons(roomName: string): RoomLesson[] {
     sizeBytes: row.size_bytes,
     createdAt: row.created_at,
   }));
+}
+
+export function getRoomLesson(roomName: string, lessonId: string) {
+  const row = getDatabase()
+    .prepare(
+      `SELECT lesson_id, object_key, original_filename, size_bytes, created_at
+       FROM room_lessons WHERE room_name = ? AND lesson_id = ?`,
+    )
+    .get(roomName, lessonId) as
+    | (RoomLessonRow & { object_key: string })
+    | undefined;
+
+  return row
+    ? {
+        id: row.lesson_id,
+        objectKey: row.object_key,
+        fileName: row.original_filename,
+        sizeBytes: row.size_bytes,
+        createdAt: row.created_at,
+      }
+    : null;
+}
+
+export function getActiveLessonPresentation(roomName: string) {
+  return getRoomSettings(roomName)?.activeLessonPresentation ?? null;
+}
+
+export function setActiveLessonPresentation(
+  roomName: string,
+  presentation: ActiveLessonPresentation | null,
+) {
+  getDatabase()
+    .prepare(
+      `UPDATE room_settings
+       SET active_lesson_id = ?, active_lesson_page = ?, updated_at = ?, last_active_at = ?
+       WHERE room_name = ?`,
+    )
+    .run(
+      presentation?.lessonId ?? null,
+      presentation?.page ?? null,
+      Date.now(),
+      Date.now(),
+      roomName,
+    );
 }
 
 export function getRoomLessonObjectKeys(roomName: string) {

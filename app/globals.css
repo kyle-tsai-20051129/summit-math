@@ -1275,7 +1275,7 @@ a {
 .host-lesson-row {
   min-width: 0;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   gap: 8px;
   align-items: center;
   padding: 9px 10px;
@@ -1299,6 +1299,41 @@ a {
   color: #b9c0c3;
   font-size: 0.72rem;
   white-space: nowrap;
+}
+
+.host-lesson-row button,
+.host-stop-presenting {
+  min-height: 30px;
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border: 1px solid rgba(94, 234, 212, 0.35);
+  border-radius: 6px;
+  background: rgba(94, 234, 212, 0.08);
+  color: #ccfbf1;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.host-lesson-row button:hover,
+.host-presenting-button {
+  background: rgba(94, 234, 212, 0.18);
+}
+
+.host-lesson-row button svg,
+.host-stop-presenting svg {
+  width: 14px;
+  height: 14px;
+}
+
+.host-stop-presenting {
+  width: 100%;
+  margin-top: 2px;
+  border-color: rgba(251, 113, 133, 0.35);
+  background: rgba(251, 113, 133, 0.08);
+  color: #fecdd3;
 }
 
 .host-section-label {
@@ -2130,6 +2165,179 @@ a {
   padding: 10px;
 }
 
+.lesson-layout {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: stretch;
+  align-self: stretch;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(220px, 21vw, 340px);
+  gap: 10px;
+  align-items: stretch;
+  justify-items: stretch;
+  place-items: stretch;
+  padding: 10px;
+}
+
+.lesson-stage {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 40px minmax(0, 1fr) 42px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: #111819;
+}
+
+.lesson-stage-header,
+.lesson-stage-controls {
+  min-width: 0;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: #172021;
+  color: #d8e1df;
+  font-size: 0.78rem;
+}
+
+.lesson-stage-header > div,
+.lesson-stage-controls {
+  min-width: 0;
+}
+
+.lesson-stage-header > div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  overflow: hidden;
+  color: #f7f9f8;
+  font-weight: 800;
+}
+
+.lesson-stage-header svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  color: #5eead4;
+}
+
+.lesson-stage-header span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lesson-stage-header > span {
+  flex: 0 0 auto;
+  color: #9eb2af;
+  font-size: 0.72rem;
+}
+
+.pdf-page-renderer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #263131;
+}
+
+.pdf-page-canvas {
+  display: block;
+  max-width: calc(100% - 24px);
+  max-height: calc(100% - 24px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+.pdf-page-status,
+.pdf-page-error {
+  position: absolute;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: rgba(10, 17, 18, 0.78);
+  color: #d8e1df;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.pdf-page-status svg {
+  width: 18px;
+  height: 18px;
+  animation: pdf-page-spin 0.8s linear infinite;
+}
+
+.pdf-page-error {
+  color: #fecaca;
+}
+
+@keyframes pdf-page-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.lesson-stage-controls {
+  justify-content: center;
+}
+
+.lesson-stage-controls button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #f7f9f8;
+}
+
+.lesson-stage-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.lesson-stage-controls button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.lesson-stage-controls > span {
+  min-width: 64px;
+  text-align: center;
+  color: #d8e1df;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.lesson-stage-controls .lesson-stop-button {
+  width: auto;
+  margin-left: 10px;
+  display: inline-flex;
+  gap: 6px;
+  padding: 0 9px;
+  border-color: rgba(251, 113, 133, 0.35);
+  background: rgba(251, 113, 133, 0.08);
+  color: #fecdd3;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
 .screen-share-stage {
   width: 100%;
   height: 100%;
@@ -2531,6 +2739,17 @@ a {
     padding: 8px;
   }
 
+  .lesson-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 112px;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .lesson-stage-header > span {
+    display: none;
+  }
+
   .screen-share-stage {
     padding-bottom: 0;
   }
@@ -2704,6 +2923,22 @@ a {
     grid-template-rows: minmax(0, 1fr) 72px;
     gap: 6px;
     padding: 6px;
+  }
+
+  .lesson-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 72px;
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .lesson-stage {
+    grid-template-rows: 32px minmax(0, 1fr) 36px;
+  }
+
+  .lesson-stage-header,
+  .lesson-stage-controls {
+    padding: 0 8px;
   }
 
   .screen-share-stage {
