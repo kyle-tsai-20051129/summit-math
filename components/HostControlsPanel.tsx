@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Lock, MicOff, UserMinus, X } from "lucide-react";
+import { Check, FileText, FileUp, Lock, MicOff, UserMinus, X } from "lucide-react";
 
 export type HostParticipant = {
   identity: string;
@@ -13,6 +13,12 @@ export type WaitingRoomParticipant = {
   label: string;
 };
 
+export type HostLesson = {
+  id: string;
+  fileName: string;
+  sizeBytes: number;
+};
+
 type HostControlsPanelProps = {
   participants: HostParticipant[];
   waitingParticipants: WaitingRoomParticipant[];
@@ -20,12 +26,16 @@ type HostControlsPanelProps = {
   isLocked: boolean;
   isBusy: boolean;
   errorMessage: string;
+  lessons: HostLesson[];
+  lessonError: string;
+  isLessonUploadBusy: boolean;
   onClose: () => void;
   onToggleLock: () => void;
   onMuteParticipant: (identity: string) => void;
   onRemoveParticipant: (identity: string) => void;
   onAdmitParticipant: (requestId: string) => void;
   onDeclineParticipant: (requestId: string) => void;
+  onUploadLesson: (file: File) => void;
 };
 
 export function HostControlsPanel({
@@ -35,12 +45,16 @@ export function HostControlsPanel({
   isLocked,
   isBusy,
   errorMessage,
+  lessons,
+  lessonError,
+  isLessonUploadBusy,
   onClose,
   onToggleLock,
   onMuteParticipant,
   onRemoveParticipant,
   onAdmitParticipant,
   onDeclineParticipant,
+  onUploadLesson,
 }: HostControlsPanelProps) {
   if (!isOpen) {
     return null;
@@ -69,6 +83,40 @@ export function HostControlsPanel({
       </button>
 
       {errorMessage ? <p className="host-panel-error">{errorMessage}</p> : null}
+
+      <div className="host-lesson-list">
+        <div className="host-lesson-heading">
+          <p className="host-section-label">Teaching materials</p>
+          <label className={`host-upload-button ${isLessonUploadBusy ? "is-busy" : ""}`}>
+            <FileUp aria-hidden="true" />
+            {isLessonUploadBusy ? "Uploading" : "Upload PDF"}
+            <input
+              type="file"
+              accept="application/pdf,.pdf"
+              disabled={isLessonUploadBusy}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) {
+                  onUploadLesson(file);
+                }
+              }}
+            />
+          </label>
+        </div>
+        {lessonError ? <p className="host-panel-error">{lessonError}</p> : null}
+        {lessons.length > 0 ? (
+          lessons.map((lesson) => (
+            <div className="host-lesson-row" key={lesson.id}>
+              <FileText aria-hidden="true" />
+              <span title={lesson.fileName}>{lesson.fileName}</span>
+              <small>{formatLessonSize(lesson.sizeBytes)}</small>
+            </div>
+          ))
+        ) : (
+          <p className="host-panel-empty">No PDFs uploaded yet.</p>
+        )}
+      </div>
 
       <div className="host-waiting-list">
         <p className="host-section-label">Waiting to join</p>
@@ -140,4 +188,8 @@ export function HostControlsPanel({
       </div>
     </aside>
   );
+}
+
+function formatLessonSize(sizeBytes: number) {
+  return `${(sizeBytes / (1024 * 1024)).toFixed(sizeBytes < 1024 * 1024 ? 1 : 0)} MB`;
 }

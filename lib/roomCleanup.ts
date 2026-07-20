@@ -1,9 +1,11 @@
 import { RoomServiceClient } from "livekit-server-sdk";
 import {
   deleteRoomSettings,
+  getRoomLessonObjectKeys,
   getRoomNamesInactiveSince,
   touchRoomActivity,
 } from "@/lib/roomDatabase";
+import { deleteLessonObject, isLessonStorageConfigured } from "@/lib/lessonStorage";
 
 const defaultEmptyRoomTtlHours = 24;
 const cleanupIntervalMs = 5 * 60 * 1000;
@@ -43,12 +45,27 @@ async function cleanupExpiredRooms(
     apiSecret,
   );
 
+  async function removeExpiredRoom(roomName: string) {
+    const lessonObjectKeys = getRoomLessonObjectKeys(roomName);
+
+    if (lessonObjectKeys.length > 0 && !isLessonStorageConfigured()) {
+      return;
+    }
+
+    for (const objectKey of lessonObjectKeys) {
+      await deleteLessonObject(objectKey);
+    }
+
+    await roomService.deleteRoom(roomName).catch(() => undefined);
+    deleteRoomSettings(roomName);
+  }
+
   for (const roomName of roomNames) {
     try {
       const rooms = await roomService.listRooms([roomName]);
 
       if (rooms.length === 0) {
-        deleteRoomSettings(roomName);
+        await removeExpiredRoom(roomName);
         continue;
       }
 
@@ -58,8 +75,7 @@ async function cleanupExpiredRooms(
         continue;
       }
 
-      await roomService.deleteRoom(roomName);
-      deleteRoomSettings(roomName);
+      await removeExpiredRoom(roomName);
     } catch {
       // A later request retries cleanup; an individual stale room never blocks calls.
     }

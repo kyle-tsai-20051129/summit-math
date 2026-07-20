@@ -21,6 +21,80 @@ body {
   min-height: 100%;
 }
 
+.app-error-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #111517;
+  color: #f7f9f8;
+}
+
+.app-error-panel {
+  width: min(440px, 100%);
+  display: grid;
+  gap: 16px;
+  padding: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: #1a2022;
+  text-align: center;
+}
+
+.app-error-panel h1,
+.app-error-panel p {
+  margin: 0;
+}
+
+.app-error-panel h1 {
+  font-size: 1.65rem;
+  letter-spacing: 0;
+}
+
+.app-error-panel p:not(.app-error-eyebrow) {
+  color: #b9c0c3;
+  line-height: 1.5;
+}
+
+.app-error-eyebrow {
+  color: #5eead4;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.app-error-panel div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.app-error-panel button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: #0f766e;
+  color: #f7f9f8;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.app-error-panel .app-error-secondary {
+  background: transparent;
+}
+
+.app-error-panel button:hover {
+  background: #115e59;
+}
+
+.app-error-panel .app-error-secondary:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 body {
   margin: 0;
   background: var(--background);
@@ -1144,6 +1218,89 @@ a {
   gap: 8px;
 }
 
+.host-lesson-list {
+  display: grid;
+  gap: 8px;
+}
+
+.host-lesson-heading {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.host-upload-button {
+  min-height: 34px;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 9px;
+  border: 1px solid rgba(94, 234, 212, 0.3);
+  border-radius: 8px;
+  background: rgba(94, 234, 212, 0.1);
+  color: #ccfbf1;
+  font-size: 0.76rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.host-upload-button:hover {
+  background: rgba(94, 234, 212, 0.18);
+}
+
+.host-upload-button.is-busy {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.host-upload-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.host-upload-button svg,
+.host-lesson-row svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.host-lesson-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #d4d8d7;
+}
+
+.host-lesson-row > span {
+  min-width: 0;
+  overflow: hidden;
+  color: #f7f9f8;
+  font-size: 0.84rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-lesson-row small {
+  color: #b9c0c3;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
 .host-section-label {
   margin: 0;
   color: #b9c0c3;
@@ -1706,6 +1863,39 @@ a {
 
 .room-full-screen .room-secondary-action:hover {
   background: rgba(255, 255, 255, 0.08);
+}
+
+.host-recovery-screen {
+  text-align: left;
+}
+
+.host-recovery-key-value {
+  width: 100%;
+  display: block;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  border: 1px solid rgba(94, 234, 212, 0.3);
+  border-radius: 8px;
+  background: #101416;
+  color: #ccfbf1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  user-select: all;
+}
+
+.room-full-screen .host-recovery-copy {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(94, 234, 212, 0.35);
+  background: rgba(94, 234, 212, 0.1);
+  color: #ccfbf1;
+}
+
+.room-full-screen .host-recovery-copy:hover {
+  background: rgba(94, 234, 212, 0.18);
 }
 
 .prejoin-page {

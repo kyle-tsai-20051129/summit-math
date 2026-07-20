@@ -9,22 +9,22 @@ import {
   getWaitingRoomRequestsForRoom,
   removeWaitingRoomRequest,
 } from "@/lib/roomDatabase";
+import {
+  getLiveKitConfig,
+  liveKitConfigurationError,
+  toRoomServiceUrl,
+} from "@/lib/livekitConfig";
 
-const missingEnvMessage =
-  "LiveKit is not configured. Set LIVEKIT_API_KEY, LIVEKIT_API_SECRET, and LIVEKIT_URL.";
-
-function toRoomServiceUrl(livekitUrl: string) {
-  return livekitUrl.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
-}
+export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  const apiKey = process.env.LIVEKIT_API_KEY;
-  const apiSecret = process.env.LIVEKIT_API_SECRET;
-  const livekitUrl = process.env.LIVEKIT_URL;
+  const config = getLiveKitConfig();
 
-  if (!apiKey || !apiSecret || !livekitUrl) {
-    return NextResponse.json({ error: missingEnvMessage }, { status: 500 });
+  if (!config) {
+    return NextResponse.json({ error: liveKitConfigurationError }, { status: 503 });
   }
+
+  const { apiKey, apiSecret, livekitUrl } = config;
 
   const { searchParams } = new URL(request.url);
   const roomName = searchParams.get("roomName")?.trim() ?? "";
@@ -68,13 +68,13 @@ export async function GET(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const apiKey = process.env.LIVEKIT_API_KEY;
-  const apiSecret = process.env.LIVEKIT_API_SECRET;
-  const livekitUrl = process.env.LIVEKIT_URL;
+  const config = getLiveKitConfig();
 
-  if (!apiKey || !apiSecret || !livekitUrl) {
-    return NextResponse.json({ error: missingEnvMessage }, { status: 500 });
+  if (!config) {
+    return NextResponse.json({ error: liveKitConfigurationError }, { status: 503 });
   }
+
+  const { apiKey, apiSecret, livekitUrl } = config;
 
   const { searchParams } = new URL(request.url);
   const roomName = searchParams.get("roomName")?.trim() ?? "";

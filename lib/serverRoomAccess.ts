@@ -1,7 +1,10 @@
-import { createHash, randomBytes, timingSafeEqual } from "crypto";
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from "crypto";
 
 export const hostMetadataVersion = 1;
-export const passwordMetadataVersion = 1;
+export const passwordMetadataVersion = 2;
+const passwordHashPrefix = "scrypt:";
+const passwordHashKeyLength = 32;
+const passwordHashOptions = { N: 16_384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 
 export type RoomAccessMetadata = {
   access?: {
@@ -66,11 +69,17 @@ export function createSecretHash(secret: string, salt: string) {
 
 export function createPasswordMetadata(password: string) {
   const salt = randomBytes(16).toString("hex");
+  const passwordHash = scryptSync(
+    password,
+    salt,
+    passwordHashKeyLength,
+    passwordHashOptions,
+  ).toString("hex");
 
   return {
     version: passwordMetadataVersion,
     salt,
-    passwordHash: createSecretHash(password, salt),
+    passwordHash: `${passwordHashPrefix}${passwordHash}`,
   };
 }
 
@@ -120,6 +129,21 @@ export function verifyRoomPassword(
     return true;
   }
 
+  if (access.passwordHash.startsWith(passwordHashPrefix)) {
+    const expectedHash = access.passwordHash.slice(passwordHashPrefix.length);
+    const attemptedHash = scryptSync(
+      password,
+      access.salt,
+      passwordHashKeyLength,
+      passwordHashOptions,
+    ).toString("hex");
+    const expected = Buffer.from(expectedHash, "hex");
+    const actual = Buffer.from(attemptedHash, "hex");
+
+    return expected.length === actual.length && timingSafeEqual(expected, actual);
+  }
+
+  // Rooms created before the stronger scrypt format remain joinable.
   return verifySecret(password, access.salt, access.passwordHash);
 }
 

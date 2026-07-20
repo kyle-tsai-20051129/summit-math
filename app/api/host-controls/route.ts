@@ -14,15 +14,15 @@ import {
   setWaitingRoomRequestStatus,
   toRoomAccessMetadata,
 } from "@/lib/roomDatabase";
-
-const missingEnvMessage =
-  "LiveKit is not configured. Set LIVEKIT_API_KEY, LIVEKIT_API_SECRET, and LIVEKIT_URL.";
+import {
+  getLiveKitConfig,
+  liveKitConfigurationError,
+  toRoomServiceUrl,
+} from "@/lib/livekitConfig";
 
 type HostAction = "lock" | "remove" | "mute" | "admit" | "deny" | "waiting";
 
-function toRoomServiceUrl(livekitUrl: string) {
-  return livekitUrl.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
-}
+export const runtime = "nodejs";
 
 function readStringField(body: unknown, fieldName: string) {
   return typeof body === "object" &&
@@ -47,13 +47,13 @@ function readHostAction(body: unknown): HostAction | "" {
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.LIVEKIT_API_KEY;
-  const apiSecret = process.env.LIVEKIT_API_SECRET;
-  const livekitUrl = process.env.LIVEKIT_URL;
+  const config = getLiveKitConfig();
 
-  if (!apiKey || !apiSecret || !livekitUrl) {
-    return NextResponse.json({ error: missingEnvMessage }, { status: 500 });
+  if (!config) {
+    return NextResponse.json({ error: liveKitConfigurationError }, { status: 503 });
   }
+
+  const { apiKey, apiSecret, livekitUrl } = config;
 
   let body: unknown;
 

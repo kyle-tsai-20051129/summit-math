@@ -3,12 +3,14 @@ export const maxRoomPasswordLength = 128;
 const roomPasswordSessionPrefix = "summit-video-room-password:";
 const roomAccessModeSessionPrefix = "summit-video-room-access-mode:";
 const roomHostKeySessionPrefix = "summit-video-room-host-key:";
+const roomHostRecoveryNoticeSessionPrefix = "summit-video-room-host-recovery-notice:";
 const roomWaitingRoomSessionPrefix = "summit-video-room-waiting-room:";
 
 export type RoomAccessMode = "join" | "create";
 
 export function normalizeRoomPassword(password: string) {
-  return password.trim();
+  // Passwords are exact secrets. Leading and trailing spaces must not be altered.
+  return password;
 }
 
 export function isValidRoomPassword(password: string) {
@@ -25,6 +27,10 @@ export function getRoomAccessModeStorageKey(roomName: string) {
 
 export function getRoomHostKeyStorageKey(roomName: string) {
   return `${roomHostKeySessionPrefix}${roomName}`;
+}
+
+export function getRoomHostRecoveryNoticeStorageKey(roomName: string) {
+  return `${roomHostRecoveryNoticeSessionPrefix}${roomName}`;
 }
 
 export function getRoomWaitingRoomStorageKey(roomName: string) {

@@ -8,6 +8,7 @@ import { CallControls } from "@/components/CallControls";
 import { ChatPanel } from "@/components/ChatPanel";
 import {
   HostControlsPanel,
+  HostLesson,
   HostParticipant,
 } from "@/components/HostControlsPanel";
 import {
@@ -35,6 +36,7 @@ import { isValidRoomName, normalizeRoomName } from "@/lib/room";
 import {
   getRoomAccessModeStorageKey,
   getRoomHostKeyStorageKey,
+  getRoomHostRecoveryNoticeStorageKey,
   getRoomPasswordStorageKey,
   getRoomWaitingRoomStorageKey,
   isRoomAccessMode,
@@ -62,6 +64,7 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
   const [roomAccessMode, setRoomAccessMode] =
     useState<RoomAccessMode>("join");
   const [hostKey, setHostKey] = useState("");
+  const [showHostRecoveryKey, setShowHostRecoveryKey] = useState(false);
   const [waitingRoomEnabled, setWaitingRoomEnabled] = useState(false);
 
   useEffect(() => {
@@ -86,9 +89,11 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
       getRoomAccessModeStorageKey(roomName),
     );
     const hostKeyStorageKey = getRoomHostKeyStorageKey(roomName);
-    const storedHostKey =
-      window.sessionStorage.getItem(hostKeyStorageKey) ??
-      window.localStorage.getItem(hostKeyStorageKey);
+    const storedHostKey = window.sessionStorage.getItem(hostKeyStorageKey);
+    const hostRecoveryNoticeStorageKey =
+      getRoomHostRecoveryNoticeStorageKey(roomName);
+    const hasPendingHostRecoveryNotice =
+      window.sessionStorage.getItem(hostRecoveryNoticeStorageKey) === "pending";
     const storedWaitingRoomEnabled = window.sessionStorage.getItem(
       getRoomWaitingRoomStorageKey(roomName),
     );
@@ -109,8 +114,16 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
 
     if (storedHostKey) {
       setHostKey(storedHostKey);
-      window.sessionStorage.setItem(hostKeyStorageKey, storedHostKey);
     }
+
+    setShowHostRecoveryKey(
+      nextRoomAccessMode === "create" &&
+        Boolean(storedHostKey) &&
+        hasPendingHostRecoveryNotice,
+    );
+
+    // Remove credentials created by older versions that shared host access across tabs.
+    window.localStorage.removeItem(hostKeyStorageKey);
 
     // This setting only applies to the immediately preceding Create-room flow.
     setWaitingRoomEnabled(
@@ -176,6 +189,21 @@ export function VideoRoom({ roomId }: VideoRoomProps) {
           </form>
         </section>
       </main>
+    );
+  }
+
+  if (showHostRecoveryKey && hostKey) {
+    return (
+      <HostRecoveryKeyScreen
+        roomName={roomName}
+        hostRecoveryKey={hostKey}
+        onContinue={() => {
+          window.sessionStorage.removeItem(
+            getRoomHostRecoveryNoticeStorageKey(roomName),
+          );
+          setShowHostRecoveryKey(false);
+        }}
+      />
     );
   }
 
@@ -246,6 +274,9 @@ function VideoRoomCall({
   const [waitingParticipants, setWaitingParticipants] = useState<
     { id: string; label: string }[]
   >([]);
+  const [lessons, setLessons] = useState<HostLesson[]>([]);
+  const [lessonError, setLessonError] = useState("");
+  const [isLessonUploadBusy, setIsLessonUploadBusy] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const seenChatMessageCountRef = useRef(0);
   const callStatus = getCallConnectionStatus(
@@ -311,6 +342,7 @@ function VideoRoomCall({
   function leaveRoom() {
     void videoRoom.cancelWaitingRoomRequest();
     videoRoom.disconnect();
+    window.sessionStorage.removeItem(getRoomHostKeyStorageKey(roomName));
     router.push("/");
   }
 
@@ -357,7 +389,7 @@ function VideoRoomCall({
     action: "lock" | "remove" | "mute" | "admit" | "deny",
     options: { targetIdentity?: string; locked?: boolean } = {},
   ) {
-    if (!hostKey) {
+    if (!videoRoom.isHost || !hostKey) {
       setHostActionError("Host controls are only available to the room creator.");
       return;
     }
@@ -414,6 +446,96 @@ function VideoRoomCall({
     }
   }
 
+  async function uploadLesson(file: File) {
+    if (!videoRoom.isHost || !hostKey) {
+      setLessonError("Only the room host can upload teaching materials.");
+      return;
+    }
+
+    if (file.size > 25 * 1024 * 1024 || !file.name.toLowerCase().endsWith(".pdf")) {
+      setLessonError("Select a PDF no larger than 25 MB.");
+      return;
+    }
+
+    const signature = await file.slice(0, 5).text();
+    if (signature !== "%PDF-") {
+      setLessonError("Select a valid PDF file.");
+      return;
+    }
+
+    setIsLessonUploadBusy(true);
+    setLessonError("");
+
+    try {
+      const uploadResponse = await fetch("/api/lessons/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roomName,
+          hostKey,
+          fileName: file.name,
+          contentType: file.type || "application/pdf",
+          sizeBytes: file.size,
+        }),
+      });
+      const uploadResult = (await uploadResponse.json()) as {
+        uploadId?: string;
+        uploadUrl?: string;
+        uploadMode?: "local" | "s3";
+        error?: string;
+      };
+
+      if (!uploadResponse.ok || !uploadResult.uploadId || !uploadResult.uploadUrl) {
+        throw new Error(uploadResult.error || "Unable to prepare the PDF upload.");
+      }
+
+      const objectResponse = await fetch(uploadResult.uploadUrl, {
+        method: "PUT",
+        headers:
+          uploadResult.uploadMode === "local"
+            ? {
+                "Content-Type": "application/pdf",
+                "x-room-name": roomName,
+                "x-host-key": hostKey,
+                "x-upload-id": uploadResult.uploadId,
+              }
+            : { "Content-Type": "application/pdf" },
+        body: file,
+      });
+
+      if (!objectResponse.ok) {
+        throw new Error("The PDF upload failed. Check the storage CORS settings and try again.");
+      }
+
+      const finalizeResponse = await fetch("/api/lessons", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roomName,
+          hostKey,
+          action: "finalize",
+          uploadId: uploadResult.uploadId,
+        }),
+      });
+      const finalizeResult = (await finalizeResponse.json()) as {
+        lesson?: HostLesson;
+        error?: string;
+      };
+
+      if (!finalizeResponse.ok || !finalizeResult.lesson) {
+        throw new Error(finalizeResult.error || "Unable to save the uploaded PDF.");
+      }
+
+      setLessons((currentLessons) => [finalizeResult.lesson!, ...currentLessons]);
+    } catch (error) {
+      setLessonError(
+        error instanceof Error ? error.message : "Unable to upload the PDF.",
+      );
+    } finally {
+      setIsLessonUploadBusy(false);
+    }
+  }
+
   useEffect(() => {
     const previousMessageCount = seenChatMessageCountRef.current;
     const nextMessages = videoRoom.chatMessages.slice(previousMessageCount);
@@ -438,6 +560,49 @@ function VideoRoomCall({
       setUnreadChatCount(0);
     }
   }, [isChatOpen]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (!videoRoom.isHost || !hostKey) {
+      setLessons([]);
+      return () => {
+        active = false;
+      };
+    }
+
+    const loadLessons = async () => {
+      const response = await fetch("/api/lessons", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomName, hostKey, action: "list" }),
+      });
+      const result = (await response.json()) as {
+        lessons?: HostLesson[];
+        error?: string;
+      };
+
+      if (!response.ok || result.error) {
+        throw new Error(result.error || "Unable to load teaching materials.");
+      }
+
+      if (active) {
+        setLessons(result.lessons ?? []);
+      }
+    };
+
+    void loadLessons().catch((error) => {
+      if (active) {
+        setLessonError(
+          error instanceof Error ? error.message : "Unable to load teaching materials.",
+        );
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [hostKey, roomName, videoRoom.isHost]);
 
   useEffect(() => {
     if (!videoRoom.isHost || !hostKey) {
@@ -690,6 +855,9 @@ function VideoRoomCall({
           isLocked={videoRoom.isRoomLocked}
           isBusy={isHostActionBusy}
           errorMessage={hostActionError}
+          lessons={lessons}
+          lessonError={lessonError}
+          isLessonUploadBusy={isLessonUploadBusy}
           onClose={() => setIsHostPanelOpen(false)}
           onToggleLock={() =>
             runHostAction("lock", { locked: !videoRoom.isRoomLocked })
@@ -706,6 +874,7 @@ function VideoRoomCall({
           onDeclineParticipant={(targetIdentity) =>
             runHostAction("deny", { targetIdentity })
           }
+          onUploadLesson={(file) => void uploadLesson(file)}
         />
       ) : null}
 
@@ -811,6 +980,48 @@ function VideoRoomCall({
         onToggleChat={toggleChat}
         onLeave={leaveRoom}
       />
+    </main>
+  );
+}
+
+type HostRecoveryKeyScreenProps = {
+  roomName: string;
+  hostRecoveryKey: string;
+  onContinue: () => void;
+};
+
+function HostRecoveryKeyScreen({
+  roomName,
+  hostRecoveryKey,
+  onContinue,
+}: HostRecoveryKeyScreenProps) {
+  const [copyStatus, setCopyStatus] = useState("Copy key");
+
+  async function copyRecoveryKey() {
+    await copyText(hostRecoveryKey);
+    setCopyStatus("Copied");
+    window.setTimeout(() => setCopyStatus("Copy key"), 1600);
+  }
+
+  return (
+    <main className="call-page call-access-page">
+      <section
+        className="room-full-screen host-recovery-screen"
+        aria-labelledby="host-recovery-title"
+      >
+        <p className="room-full-eyebrow">Room code: {roomName}</p>
+        <h1 id="host-recovery-title">Save your host recovery key</h1>
+        <p>
+          Use this key to recover host controls in a new browser or after leaving
+          the call. Keep it private.
+        </p>
+        <output className="host-recovery-key-value">{hostRecoveryKey}</output>
+        <button type="button" className="host-recovery-copy" onClick={() => void copyRecoveryKey()}>
+          <Copy aria-hidden="true" size={18} />
+          {copyStatus}
+        </button>
+        <button type="button" onClick={onContinue}>Continue to preview</button>
+      </section>
     </main>
   );
 }

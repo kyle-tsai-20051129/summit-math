@@ -24,22 +24,83 @@ import {
   toRoomAccessMetadata,
 } from "@/lib/roomDatabase";
 import { maybeCleanupExpiredRooms } from "@/lib/roomCleanup";
+import {
+  getLiveKitConfig,
+  liveKitConfigurationError,
+  toRoomServiceUrl,
+} from "@/lib/livekitConfig";
+import {
+  checkRateLimit,
+  getRequestClientKey,
+} from "@/lib/requestRateLimit";
 
-const missingEnvMessage =
-  "LiveKit is not configured. Set LIVEKIT_API_KEY, LIVEKIT_API_SECRET, and LIVEKIT_URL.";
 const maxParticipants = 4;
 
-function toRoomServiceUrl(livekitUrl: string) {
-  return livekitUrl.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
+function readPositiveEnvironmentNumber(
+  name: string,
+  fallback: number,
+  maximum: number,
+) {
+  const value = Number(process.env[name]);
+
+  return Number.isInteger(value) && value > 0 && value <= maximum
+    ? value
+    : fallback;
+}
+
+const tokenRequestLimit = {
+  maxRequests: readPositiveEnvironmentNumber(
+    "TOKEN_RATE_LIMIT_MAX_REQUESTS",
+    20,
+    100,
+  ),
+  windowMs:
+    readPositiveEnvironmentNumber("TOKEN_RATE_LIMIT_WINDOW_SECONDS", 60, 3600) *
+    1000,
+};
+const passwordAttemptLimit = {
+  maxRequests: readPositiveEnvironmentNumber(
+    "PASSWORD_RATE_LIMIT_MAX_REQUESTS",
+    5,
+    20,
+  ),
+  windowMs:
+    readPositiveEnvironmentNumber(
+      "PASSWORD_RATE_LIMIT_WINDOW_SECONDS",
+      900,
+      86_400,
+    ) * 1000,
+};
+
+export const runtime = "nodejs";
+
+function rateLimitedResponse(retryAfterSeconds: number) {
+  return NextResponse.json(
+    { error: "Too many join attempts. Please wait a moment and try again." },
+    {
+      status: 429,
+      headers: { "Retry-After": String(retryAfterSeconds) },
+    },
+  );
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.LIVEKIT_API_KEY;
-  const apiSecret = process.env.LIVEKIT_API_SECRET;
-  const livekitUrl = process.env.LIVEKIT_URL;
+  const config = getLiveKitConfig();
 
-  if (!apiKey || !apiSecret || !livekitUrl) {
-    return NextResponse.json({ error: missingEnvMessage }, { status: 500 });
+  if (!config) {
+    return NextResponse.json({ error: liveKitConfigurationError }, { status: 503 });
+  }
+
+  const { apiKey, apiSecret, livekitUrl } = config;
+  const clientKey = getRequestClientKey(request);
+  const tokenRateLimit = checkRateLimit(
+    `token:${clientKey}`,
+    tokenRequestLimit.maxRequests,
+    tokenRequestLimit.windowMs,
+  );
+
+  if (!tokenRateLimit.allowed) {
+    return rateLimitedResponse(tokenRateLimit.retryAfterSeconds);
   }
 
   let body: unknown;
@@ -186,6 +247,16 @@ export async function POST(request: Request) {
       }
 
       if (!isHost && !verifyRoomPassword(roomPassword, metadata)) {
+        const passwordRateLimit = checkRateLimit(
+          `password:${clientKey}:${roomName}`,
+          passwordAttemptLimit.maxRequests,
+          passwordAttemptLimit.windowMs,
+        );
+
+        if (!passwordRateLimit.allowed) {
+          return rateLimitedResponse(passwordRateLimit.retryAfterSeconds);
+        }
+
         return NextResponse.json(
           { error: "Incorrect room password." },
           { status: 401 },
@@ -254,13 +325,12 @@ export async function POST(request: Request) {
       );
     }
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Failed to check the LiveKit room.";
-
+    console.error("Unable to prepare LiveKit room", {
+      roomName,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
     return NextResponse.json(
-      { error: `Failed to prepare the LiveKit room. ${message}` },
+      { error: "Unable to prepare the room right now. Please try again." },
       { status: 500 },
     );
   }

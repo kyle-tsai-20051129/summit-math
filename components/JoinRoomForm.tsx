@@ -12,9 +12,11 @@ import {
   createRoomHostKey,
   getRoomAccessModeStorageKey,
   getRoomHostKeyStorageKey,
+  getRoomHostRecoveryNoticeStorageKey,
   getRoomPasswordStorageKey,
   getRoomWaitingRoomStorageKey,
   isValidRoomPassword,
+  isValidRoomHostKey,
   normalizeRoomPassword,
   RoomAccessMode,
 } from "@/lib/roomAccess";
@@ -27,6 +29,8 @@ export function JoinRoomForm() {
   const [isPasswordProtected, setIsPasswordProtected] = useState(false);
   const [requiresHostApproval, setRequiresHostApproval] = useState(false);
   const [roomPassword, setRoomPassword] = useState("");
+  const [isRecoveringHostAccess, setIsRecoveringHostAccess] = useState(false);
+  const [hostRecoveryKey, setHostRecoveryKey] = useState("");
   const [error, setError] = useState("");
   const [copyStatus, setCopyStatus] = useState("Copy room link");
 
@@ -50,6 +54,7 @@ export function JoinRoomForm() {
   ) {
     const normalized = normalizeRoomName(nextRoomName);
     const normalizedPassword = normalizeRoomPassword(roomPassword);
+    const normalizedHostRecoveryKey = hostRecoveryKey.trim();
     const shouldUsePassword =
       nextAccessMode === "join" || isPasswordProtected;
 
@@ -73,6 +78,15 @@ export function JoinRoomForm() {
       return;
     }
 
+    if (
+      nextAccessMode === "join" &&
+      normalizedHostRecoveryKey &&
+      !isValidRoomHostKey(normalizedHostRecoveryKey)
+    ) {
+      setError("Enter a valid host recovery key.");
+      return;
+    }
+
     window.localStorage.setItem(displayNameStorageKey, normalizedDisplayName);
     window.sessionStorage.setItem(
       getRoomAccessModeStorageKey(normalized),
@@ -86,7 +100,10 @@ export function JoinRoomForm() {
         getRoomHostKeyStorageKey(normalized),
         hostKey,
       );
-      window.localStorage.setItem(getRoomHostKeyStorageKey(normalized), hostKey);
+      window.sessionStorage.setItem(
+        getRoomHostRecoveryNoticeStorageKey(normalized),
+        "pending",
+      );
       window.sessionStorage.setItem(
         getRoomWaitingRoomStorageKey(normalized),
         requiresHostApproval ? "true" : "false",
@@ -94,6 +111,16 @@ export function JoinRoomForm() {
     } else {
       // Approval is a room-creation setting, never a preference carried into joins.
       window.sessionStorage.removeItem(getRoomWaitingRoomStorageKey(normalized));
+      window.sessionStorage.removeItem(getRoomHostRecoveryNoticeStorageKey(normalized));
+
+      if (normalizedHostRecoveryKey) {
+        window.sessionStorage.setItem(
+          getRoomHostKeyStorageKey(normalized),
+          normalizedHostRecoveryKey,
+        );
+      } else {
+        window.sessionStorage.removeItem(getRoomHostKeyStorageKey(normalized));
+      }
     }
 
     if (shouldUsePassword && normalizedPassword) {
@@ -132,6 +159,7 @@ export function JoinRoomForm() {
           className={accessMode === "join" ? "active" : ""}
           onClick={() => {
             setAccessMode("join");
+            setIsRecoveringHostAccess(false);
             setError("");
           }}
         >
@@ -142,6 +170,7 @@ export function JoinRoomForm() {
           className={accessMode === "create" ? "active" : ""}
           onClick={() => {
             setAccessMode("create");
+            setIsRecoveringHostAccess(false);
             setError("");
           }}
         >
@@ -222,6 +251,36 @@ export function JoinRoomForm() {
               setError("");
             }}
           />
+        </>
+      ) : null}
+      {accessMode === "join" ? (
+        <>
+          <button
+            className="secondary-button host-recovery-button"
+            type="button"
+            onClick={() => {
+              setIsRecoveringHostAccess((isOpen) => !isOpen);
+              setError("");
+            }}
+          >
+            {isRecoveringHostAccess ? "Cancel host recovery" : "Recover host access"}
+          </button>
+          {isRecoveringHostAccess ? (
+            <>
+              <label htmlFor="host-recovery-key">Host recovery key</label>
+              <input
+                id="host-recovery-key"
+                name="hostRecoveryKey"
+                autoComplete="off"
+                type="password"
+                value={hostRecoveryKey}
+                onChange={(event) => {
+                  setHostRecoveryKey(event.target.value);
+                  setError("");
+                }}
+              />
+            </>
+          ) : null}
         </>
       ) : null}
       {error ? <p className="form-error">{error}</p> : null}

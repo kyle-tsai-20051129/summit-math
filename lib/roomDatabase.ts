@@ -24,6 +24,30 @@ type WaitingRoomRow = {
   status: WaitingRoomRequest["status"];
 };
 
+type PendingLessonUploadRow = {
+  upload_id: string;
+  room_name: string;
+  object_key: string;
+  original_filename: string;
+  content_type: string;
+  size_bytes: number;
+  expires_at: number;
+};
+
+type RoomLessonRow = {
+  lesson_id: string;
+  original_filename: string;
+  size_bytes: number;
+  created_at: number;
+};
+
+export type RoomLesson = {
+  id: string;
+  fileName: string;
+  sizeBytes: number;
+  createdAt: number;
+};
+
 export type StoredRoomSettings = {
   roomName: string;
   access?: RoomAccessMetadata["access"];
@@ -73,6 +97,27 @@ function getDatabase() {
     );
     CREATE INDEX IF NOT EXISTS waiting_room_requests_room_name_idx
       ON waiting_room_requests(room_name, created_at);
+    CREATE TABLE IF NOT EXISTS pending_lesson_uploads (
+      upload_id TEXT PRIMARY KEY,
+      room_name TEXT NOT NULL,
+      object_key TEXT NOT NULL UNIQUE,
+      original_filename TEXT NOT NULL,
+      content_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      FOREIGN KEY (room_name) REFERENCES room_settings(room_name) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS room_lessons (
+      lesson_id TEXT PRIMARY KEY,
+      room_name TEXT NOT NULL,
+      object_key TEXT NOT NULL UNIQUE,
+      original_filename TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (room_name) REFERENCES room_settings(room_name) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS room_lessons_room_name_idx
+      ON room_lessons(room_name, created_at DESC);
   `);
 
   // Existing installations created before expiration support need this migration.
@@ -240,4 +285,116 @@ export function removeWaitingRoomRequest(roomName: string, requestId: string) {
   getDatabase()
     .prepare("DELETE FROM waiting_room_requests WHERE room_name = ? AND request_id = ?")
     .run(roomName, requestId);
+}
+
+function removeExpiredPendingLessonUploads() {
+  getDatabase()
+    .prepare("DELETE FROM pending_lesson_uploads WHERE expires_at < ?")
+    .run(Date.now());
+}
+
+export function createPendingLessonUpload(
+  uploadId: string,
+  roomName: string,
+  objectKey: string,
+  originalFilename: string,
+  contentType: string,
+  sizeBytes: number,
+) {
+  removeExpiredPendingLessonUploads();
+  getDatabase()
+    .prepare(
+      `INSERT INTO pending_lesson_uploads (
+        upload_id, room_name, object_key, original_filename, content_type,
+        size_bytes, expires_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      uploadId,
+      roomName,
+      objectKey,
+      originalFilename,
+      contentType,
+      sizeBytes,
+      Date.now() + 15 * 60 * 1000,
+    );
+}
+
+export function takePendingLessonUpload(uploadId: string, roomName: string) {
+  removeExpiredPendingLessonUploads();
+  const database = getDatabase();
+  const upload = database
+    .prepare(
+      `SELECT upload_id, room_name, object_key, original_filename, content_type,
+        size_bytes, expires_at
+       FROM pending_lesson_uploads WHERE upload_id = ? AND room_name = ?`,
+    )
+    .get(uploadId, roomName) as PendingLessonUploadRow | undefined;
+
+  if (upload) {
+    database
+      .prepare("DELETE FROM pending_lesson_uploads WHERE upload_id = ?")
+      .run(uploadId);
+  }
+
+  return upload ?? null;
+}
+
+export function getPendingLessonUpload(uploadId: string, roomName: string) {
+  removeExpiredPendingLessonUploads();
+
+  return (getDatabase()
+    .prepare(
+      `SELECT upload_id, room_name, object_key, original_filename, content_type,
+        size_bytes, expires_at
+       FROM pending_lesson_uploads WHERE upload_id = ? AND room_name = ?`,
+    )
+    .get(uploadId, roomName) as PendingLessonUploadRow | undefined) ?? null;
+}
+
+export function createRoomLesson(
+  lessonId: string,
+  roomName: string,
+  objectKey: string,
+  originalFilename: string,
+  sizeBytes: number,
+) {
+  getDatabase()
+    .prepare(
+      `INSERT INTO room_lessons (
+        lesson_id, room_name, object_key, original_filename, size_bytes, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      lessonId,
+      roomName,
+      objectKey,
+      originalFilename,
+      sizeBytes,
+      Date.now(),
+    );
+}
+
+export function getRoomLessons(roomName: string): RoomLesson[] {
+  const rows = getDatabase()
+    .prepare(
+      `SELECT lesson_id, original_filename, size_bytes, created_at
+       FROM room_lessons WHERE room_name = ? ORDER BY created_at DESC`,
+    )
+    .all(roomName) as RoomLessonRow[];
+
+  return rows.map((row) => ({
+    id: row.lesson_id,
+    fileName: row.original_filename,
+    sizeBytes: row.size_bytes,
+    createdAt: row.created_at,
+  }));
+}
+
+export function getRoomLessonObjectKeys(roomName: string) {
+  const rows = getDatabase()
+    .prepare("SELECT object_key FROM room_lessons WHERE room_name = ?")
+    .all(roomName) as Array<{ object_key: string }>;
+
+  return rows.map((row) => row.object_key);
 }
