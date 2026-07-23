@@ -1,6 +1,18 @@
 "use client";
 
-import { Check, FileText, FileUp, Lock, MicOff, Presentation, Square, UserMinus, X } from "lucide-react";
+import {
+  Check,
+  Download,
+  FileText,
+  FileUp,
+  Lock,
+  MicOff,
+  Presentation,
+  Square,
+  Trash2,
+  UserMinus,
+  X,
+} from "lucide-react";
 
 export type HostParticipant = {
   identity: string;
@@ -29,6 +41,7 @@ type HostControlsPanelProps = {
   lessons: HostLesson[];
   lessonError: string;
   isLessonUploadBusy: boolean;
+  isLessonActionBusy: boolean;
   activeLessonId: string | null;
   onClose: () => void;
   onToggleLock: () => void;
@@ -39,6 +52,8 @@ type HostControlsPanelProps = {
   onUploadLesson: (file: File) => void;
   onPresentLesson: (lessonId: string) => void;
   onStopPresenting: () => void;
+  onDownloadLesson: (lessonId: string) => void;
+  onRemoveLesson: (lessonId: string) => void;
 };
 
 export function HostControlsPanel({
@@ -51,6 +66,7 @@ export function HostControlsPanel({
   lessons,
   lessonError,
   isLessonUploadBusy,
+  isLessonActionBusy,
   activeLessonId,
   onClose,
   onToggleLock,
@@ -61,6 +77,8 @@ export function HostControlsPanel({
   onUploadLesson,
   onPresentLesson,
   onStopPresenting,
+  onDownloadLesson,
+  onRemoveLesson,
 }: HostControlsPanelProps) {
   if (!isOpen) {
     return null;
@@ -121,9 +139,30 @@ export function HostControlsPanel({
                 type="button"
                 className={activeLessonId === lesson.id ? "host-presenting-button" : ""}
                 onClick={() => onPresentLesson(lesson.id)}
+                disabled={isLessonActionBusy}
               >
                 <Presentation aria-hidden="true" />
                 {activeLessonId === lesson.id ? "Presenting" : "Present"}
+              </button>
+              <button
+                type="button"
+                className="host-lesson-icon-button"
+                aria-label={`Download ${lesson.fileName}`}
+                title="Download PDF"
+                onClick={() => onDownloadLesson(lesson.id)}
+                disabled={isLessonActionBusy}
+              >
+                <Download aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="host-lesson-icon-button host-lesson-remove"
+                aria-label={`Remove ${lesson.fileName}`}
+                title="Remove PDF"
+                onClick={() => onRemoveLesson(lesson.id)}
+                disabled={isLessonActionBusy}
+              >
+                <Trash2 aria-hidden="true" />
               </button>
             </div>
           ))

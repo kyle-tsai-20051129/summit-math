@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { hasRoomHostAccess } from "@/lib/lessonAccess";
 import {
   createRoomLesson,
+  deleteRoomLesson,
+  getActiveLessonPresentation,
   getRoomLessons,
+  setActiveLessonPresentation,
   takePendingLessonUpload,
 } from "@/lib/roomDatabase";
 import { deleteLessonObject, validateUploadedLesson } from "@/lib/lessonStorage";
@@ -36,8 +39,13 @@ export async function POST(request: Request) {
   const hostKey = readString(body, "hostKey");
   const action = readString(body, "action");
   const uploadId = readString(body, "uploadId");
+  const lessonId = readString(body, "lessonId");
 
-  if (!isValidRoomName(roomName) || (action !== "list" && !uploadId)) {
+  if (
+    !isValidRoomName(roomName) ||
+    (action !== "list" && action !== "remove" && !uploadId) ||
+    (action === "remove" && !lessonId)
+  ) {
     return NextResponse.json({ error: "Invalid lesson request." }, { status: 400 });
   }
 
@@ -47,6 +55,28 @@ export async function POST(request: Request) {
 
   if (action === "list") {
     return NextResponse.json({ lessons: getRoomLessons(roomName) });
+  }
+
+  if (action === "remove") {
+    const lesson = deleteRoomLesson(roomName, lessonId);
+    if (!lesson) {
+      return NextResponse.json(
+        { error: "That lesson is no longer available." },
+        { status: 404 },
+      );
+    }
+
+    try {
+      await deleteLessonObject(lesson.objectKey);
+    } catch {
+      // The removed lesson can no longer be opened, even if storage cleanup fails.
+    }
+
+    if (getActiveLessonPresentation(roomName)?.lessonId === lessonId) {
+      setActiveLessonPresentation(roomName, null);
+    }
+
+    return NextResponse.json({ removedLessonId: lessonId });
   }
 
   if (action !== "finalize") {

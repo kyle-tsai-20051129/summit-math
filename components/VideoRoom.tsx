@@ -278,6 +278,7 @@ function VideoRoomCall({
   const [lessons, setLessons] = useState<HostLesson[]>([]);
   const [lessonError, setLessonError] = useState("");
   const [isLessonUploadBusy, setIsLessonUploadBusy] = useState(false);
+  const [isLessonActionBusy, setIsLessonActionBusy] = useState(false);
   const [activeLesson, setActiveLesson] = useState<{
     lesson: Pick<HostLesson, "id" | "fileName">;
     page: number;
@@ -565,10 +566,60 @@ function VideoRoomCall({
         throw new Error(result.error || "Unable to update the presented lesson.");
       }
       setActiveLesson(result.presentation ?? null);
+      await videoRoom.notifyLessonPresentationUpdated();
     } catch (error) {
       setLessonError(
         error instanceof Error ? error.message : "Unable to update the presented lesson.",
       );
+    }
+  }
+
+  function downloadLesson(lessonId: string) {
+    if (!videoRoom.lessonAccessToken) {
+      setLessonError("Lesson access is not ready yet. Please try again.");
+      return;
+    }
+
+    // Load the PDF engine before a host starts presenting, reducing first-page delay.
+    void import("pdfjs-dist");
+
+    const source = `/api/lessons/view?roomName=${encodeURIComponent(roomName)}&lessonId=${encodeURIComponent(lessonId)}&accessToken=${encodeURIComponent(videoRoom.lessonAccessToken)}&download=1`;
+    window.open(source, "_blank", "noopener,noreferrer");
+  }
+
+  async function removeLesson(lessonId: string) {
+    if (!videoRoom.isHost || !hostKey) {
+      return;
+    }
+
+    const lesson = lessons.find((currentLesson) => currentLesson.id === lessonId);
+    if (!lesson || !window.confirm(`Remove ${lesson.fileName}? This cannot be undone.`)) {
+      return;
+    }
+
+    setIsLessonActionBusy(true);
+    setLessonError("");
+    try {
+      const response = await fetch("/api/lessons", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomName, hostKey, action: "remove", lessonId }),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok || result.error) {
+        throw new Error(result.error || "Unable to remove the PDF.");
+      }
+
+      setLessons((currentLessons) =>
+        currentLessons.filter((currentLesson) => currentLesson.id !== lessonId),
+      );
+      if (activeLesson?.lesson.id === lessonId) {
+        setActiveLesson(null);
+      }
+    } catch (error) {
+      setLessonError(error instanceof Error ? error.message : "Unable to remove the PDF.");
+    } finally {
+      setIsLessonActionBusy(false);
     }
   }
 
@@ -664,12 +715,16 @@ function VideoRoomCall({
     };
 
     void loadPresentation();
-    const intervalId = window.setInterval(() => void loadPresentation(), 1500);
+    const intervalId = window.setInterval(() => void loadPresentation(), 5000);
     return () => {
       active = false;
       window.clearInterval(intervalId);
     };
-  }, [roomName, videoRoom.lessonAccessToken]);
+  }, [
+    roomName,
+    videoRoom.lessonAccessToken,
+    videoRoom.lessonPresentationRevision,
+  ]);
 
   useEffect(() => {
     if (!videoRoom.isHost || !hostKey) {
@@ -925,6 +980,7 @@ function VideoRoomCall({
           lessons={lessons}
           lessonError={lessonError}
           isLessonUploadBusy={isLessonUploadBusy}
+          isLessonActionBusy={isLessonActionBusy}
           activeLessonId={activeLesson?.lesson.id ?? null}
           onClose={() => setIsHostPanelOpen(false)}
           onToggleLock={() =>
@@ -945,6 +1001,8 @@ function VideoRoomCall({
           onUploadLesson={(file) => void uploadLesson(file)}
           onPresentLesson={(lessonId) => void updateLessonPresentation("show", lessonId, 1)}
           onStopPresenting={() => void updateLessonPresentation("hide")}
+          onDownloadLesson={downloadLesson}
+          onRemoveLesson={(lessonId) => void removeLesson(lessonId)}
         />
       ) : null}
 

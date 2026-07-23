@@ -96,7 +96,7 @@ export async function createLessonUploadUrl(
   );
 }
 
-export async function createLessonReadUrl(objectKey: string) {
+export async function createLessonReadUrl(objectKey: string, download = false) {
   const { bucket, client } = requireS3LessonStorage();
 
   return getSignedUrl(
@@ -105,7 +105,7 @@ export async function createLessonReadUrl(objectKey: string) {
       Bucket: bucket,
       Key: objectKey,
       ResponseContentType: "application/pdf",
-      ResponseContentDisposition: "inline",
+      ResponseContentDisposition: download ? "attachment" : "inline",
     }),
     { expiresIn: 10 * 60 },
   );
@@ -117,6 +117,24 @@ export async function readLocalLesson(objectKey: string) {
   }
 
   return readFile(getLocalObjectPath(objectKey));
+}
+
+export async function readStoredLesson(objectKey: string) {
+  if (getLessonStorageMode() === "local") {
+    return readLocalLesson(objectKey);
+  }
+
+  const { bucket, client } = requireS3LessonStorage();
+  const object = await client.send(
+    new GetObjectCommand({ Bucket: bucket, Key: objectKey }),
+  );
+  const bytes = await object.Body?.transformToByteArray();
+
+  if (!bytes) {
+    throw new Error("Unable to read the uploaded PDF.");
+  }
+
+  return bytes;
 }
 
 export async function storeLocalLessonUpload(

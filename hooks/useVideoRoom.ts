@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RoomAccessMode } from "@/lib/roomAccess";
 
 const chatTopic = "summit-video-chat";
+const lessonPresentationTopic = "summit-video-lesson-presentation";
 const maxChatMessageLength = 500;
 
 type TokenResponse = {
@@ -301,6 +302,7 @@ export function useVideoRoom(
   const [isRoomLocked, setIsRoomLocked] = useState(false);
   const [isPasswordProtected, setIsPasswordProtected] = useState(false);
   const [lessonAccessToken, setLessonAccessToken] = useState("");
+  const [lessonPresentationRevision, setLessonPresentationRevision] = useState(0);
   const [isWaitingForApproval, setIsWaitingForApproval] = useState(false);
   const [isRecoveringConnection, setIsRecoveringConnection] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
@@ -659,7 +661,16 @@ export function useVideoRoom(
       _kind?: unknown,
       topic?: string,
     ) => {
-      if (!isCurrentConnection() || topic !== chatTopic || !participant) {
+      if (!isCurrentConnection()) {
+        return;
+      }
+
+      if (topic === lessonPresentationTopic) {
+        setLessonPresentationRevision((revision) => revision + 1);
+        return;
+      }
+
+      if (topic !== chatTopic || !participant) {
         return;
       }
 
@@ -1151,6 +1162,20 @@ export function useVideoRoom(
     [addChatMessage, addParticipantNotice, displayName],
   );
 
+  const notifyLessonPresentationUpdated = useCallback(async () => {
+    const currentRoom = roomRef.current;
+
+    setLessonPresentationRevision((revision) => revision + 1);
+    if (!currentRoom) {
+      return;
+    }
+
+    await currentRoom.localParticipant.publishData(
+      new TextEncoder().encode("updated"),
+      { reliable: true, topic: lessonPresentationTopic },
+    ).catch(() => undefined);
+  }, []);
+
   return useMemo(
     () => ({
       room,
@@ -1170,6 +1195,7 @@ export function useVideoRoom(
       isRoomLocked,
       isPasswordProtected,
       lessonAccessToken,
+      lessonPresentationRevision,
       setIsRoomLocked,
       isWaitingForApproval,
       isRecoveringConnection,
@@ -1183,6 +1209,7 @@ export function useVideoRoom(
         visibleRemoteParticipants.length + (localParticipant ? 1 : 0),
       dismissParticipantNotice,
       sendChatMessage,
+      notifyLessonPresentationUpdated,
       toggleMicrophone,
       retryConnection,
       toggleCamera,
@@ -1208,6 +1235,7 @@ export function useVideoRoom(
       isRoomLocked,
       isPasswordProtected,
       lessonAccessToken,
+      lessonPresentationRevision,
       isWaitingForApproval,
       isRecoveringConnection,
       isRetrying,
@@ -1218,6 +1246,7 @@ export function useVideoRoom(
       chatMessages,
       dismissParticipantNotice,
       sendChatMessage,
+      notifyLessonPresentationUpdated,
       toggleMicrophone,
       retryConnection,
       toggleCamera,

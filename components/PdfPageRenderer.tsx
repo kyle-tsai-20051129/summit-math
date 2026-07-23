@@ -2,12 +2,13 @@
 
 import { Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { PDFDocumentLoadingTask } from "pdfjs-dist";
+import type { PDFDocumentLoadingTask, PDFDocumentProxy } from "pdfjs-dist";
 
 type PdfPageRendererProps = {
   source: string;
   page: number;
   title: string;
+  zoom: number;
   onPageCount: (pageCount: number) => void;
 };
 
@@ -15,20 +16,21 @@ export function PdfPageRenderer({
   source,
   page,
   title,
+  zoom,
   onPageCount,
 }: PdfPageRendererProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
     let cancelled = false;
-    let resizeObserver: ResizeObserver | null = null;
     let loadingTask: PDFDocumentLoadingTask | null = null;
-    let renderTask: { cancel: () => void } | null = null;
 
-    async function renderPage() {
+    async function loadDocument() {
+      setDocument(null);
       setStatus("loading");
       setErrorMessage("");
 
@@ -39,17 +41,49 @@ export function PdfPageRenderer({
           import.meta.url,
         ).toString();
 
-        const nextLoadingTask = pdfjs.getDocument(source);
-        loadingTask = nextLoadingTask;
-        const document = await nextLoadingTask.promise;
+        loadingTask = pdfjs.getDocument(source);
+        const nextDocument = await loadingTask.promise;
         if (cancelled) {
-          document.destroy();
+          nextDocument.destroy();
           return;
         }
 
-        onPageCount(document.numPages);
-        const safePage = Math.min(Math.max(1, page), document.numPages);
-        const pdfPage = await document.getPage(safePage);
+        onPageCount(nextDocument.numPages);
+        setDocument(nextDocument);
+      } catch {
+        if (!cancelled) {
+          setStatus("error");
+          setErrorMessage("Unable to load this PDF lesson. Please try again.");
+        }
+      }
+    }
+
+    void loadDocument();
+    return () => {
+      cancelled = true;
+      loadingTask?.destroy();
+    };
+  }, [onPageCount, source]);
+
+  useEffect(() => {
+    const activeDocument = document;
+    if (!activeDocument) {
+      return;
+    }
+    const pdfDocument = activeDocument;
+
+    let cancelled = false;
+    let resizeObserver: ResizeObserver | null = null;
+    let renderTask: { cancel: () => void } | null = null;
+
+    async function renderPage() {
+      setStatus("loading");
+      try {
+        const safePage = Math.min(Math.max(1, page), pdfDocument.numPages);
+        const pdfPage = await pdfDocument.getPage(safePage);
+        if (cancelled) {
+          return;
+        }
 
         const draw = () => {
           const container = containerRef.current;
@@ -61,11 +95,11 @@ export function PdfPageRenderer({
           renderTask?.cancel();
           const bounds = container.getBoundingClientRect();
           const baseViewport = pdfPage.getViewport({ scale: 1 });
-          const scale = Math.min(
+          const fitScale = Math.min(
             Math.max(bounds.width - 24, 1) / baseViewport.width,
             Math.max(bounds.height - 24, 1) / baseViewport.height,
           );
-          const viewport = pdfPage.getViewport({ scale });
+          const viewport = pdfPage.getViewport({ scale: fitScale * zoom });
           const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
           const context = canvas.getContext("2d", { alpha: false });
           if (!context) {
@@ -79,10 +113,7 @@ export function PdfPageRenderer({
           context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
           context.fillStyle = "#ffffff";
           context.fillRect(0, 0, viewport.width, viewport.height);
-          const nextRenderTask = pdfPage.render({
-            canvasContext: context,
-            viewport,
-          });
+          const nextRenderTask = pdfPage.render({ canvasContext: context, viewport });
           renderTask = nextRenderTask;
           void nextRenderTask.promise
             .then(() => {
@@ -106,7 +137,7 @@ export function PdfPageRenderer({
       } catch {
         if (!cancelled) {
           setStatus("error");
-          setErrorMessage("Unable to load this PDF lesson.");
+          setErrorMessage("Unable to render this PDF page.");
         }
       }
     }
@@ -116,12 +147,15 @@ export function PdfPageRenderer({
       cancelled = true;
       resizeObserver?.disconnect();
       renderTask?.cancel();
-      loadingTask?.destroy();
     };
-  }, [onPageCount, page, source]);
+  }, [document, page, zoom]);
 
   return (
-    <div className="pdf-page-renderer" ref={containerRef} aria-label={title}>
+    <div
+      className={`pdf-page-renderer ${zoom > 1 ? "is-zoomed" : ""}`}
+      ref={containerRef}
+      aria-label={title}
+    >
       <canvas ref={canvasRef} className="pdf-page-canvas" />
       {status === "loading" ? (
         <div className="pdf-page-status" role="status">

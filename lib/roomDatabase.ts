@@ -463,3 +463,17 @@ export function getRoomLessonObjectKeys(roomName: string) {
 
   return rows.map((row) => row.object_key);
 }
+
+export function deleteRoomLesson(roomName: string, lessonId: string) {
+  const lesson = getRoomLesson(roomName, lessonId);
+
+  if (!lesson) {
+    return null;
+  }
+
+  getDatabase()
+    .prepare("DELETE FROM room_lessons WHERE room_name = ? AND lesson_id = ?")
+    .run(roomName, lessonId);
+
+  return lesson;
+}

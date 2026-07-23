@@ -57,6 +57,8 @@ Hosts can upload PDFs up to 25 MB from Host controls. In development, when S3 is
 
 The host can present an uploaded lesson from Host controls. The active document and page are saved with the room, so every participant sees the same PDF page, including people who join after the lesson is opened. Lesson files stay private: each call receives a short-lived, room-scoped access token for viewing its own materials.
 
+While a lesson is presented, the host can choose any page with the page controls. Everyone can use local zoom controls and return to the fitted page view without changing the shared lesson page. Hosts can also download or permanently remove uploaded PDFs from Host controls.
+
 ## Host Recovery
 
 When creating a room, the creator is shown a one-time host recovery key before the device preview. Store it somewhere private. After leaving the host tab or joining from a new browser, use **Recover host access** in the Join room flow and enter that key to regain host controls. The server stores only a hash of the key; normal participants do not receive host access.
